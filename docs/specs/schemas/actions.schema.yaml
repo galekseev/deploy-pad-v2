@@ -1,0 +1,820 @@
+# yaml-language-server: $schema=https://json-schema.org/draft/2020-12/schema
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://deploy-pad.local/schemas/actions.schema.yaml"
+title: ActionsConfig
+description: |
+  Per-repo catalog of actions. The reserved top-level `version` key
+  declares the config format version (engine errors on mismatch at load
+  time unless `--ignore-version` is passed, which downgrades it to a
+  warning); every other top-level key is a repository ID. Each repo declares
+  its source URI, default framework/package-manager configuration, and
+  one or more generations. A generation is one stable interface: it owns
+  a map of action ID -> Action plus a set of release pins (each an
+  immutable git ref, one optionally flagged `latest`). The plan selects
+  which release pin to run; the pin is NOT part of the fully-qualified
+  action id `<repoId>.<generationId>.<actionId>`.
+
+  Structure: version + (repo -> generation -> { releases, actions }).
+
+  Each action's `type` selects how the engine runs it (make,
+  forge-contract, hardhat2-contract, hardhat3-contract, hardhat3-module,
+  forge-script, hardhat2-script, hardhat3-script, script, contract-call).
+  The `deploys` behavior flag marks the action as a deploying action —
+  one that must fulfill the deployment interface (write .env.outputs,
+  drop artifacts into SYS_ARTIFACTS_DIR, verify inline when
+  SYS_VERIFY=1) and may set `verify` — instead of a non-deploying one.
+
+type: object
+
+properties:
+  version:
+    type: integer
+    description: |
+      Config format version this file is written against (current: 2).
+      The engine compares it to the format version it supports at load
+      time. A differing version is a load-time error that aborts the run
+      unless `--ignore-version` is passed, which downgrades it to a
+      warning and proceeds. A missing version is always a warning.
+
+patternProperties:
+
+  # Repository ID convention: lowercase, hyphenated. The negative
+  # lookahead excludes the reserved `version` key, which would otherwise
+  # match this pattern and be forced to validate as a RepoConfig.
+  "^(?!version$)[a-z][a-z0-9-]*$":
+    $ref: "#/$defs/RepoConfig"
+
+additionalProperties: false
+
+
+$defs:
+
+  Repository:
+    type: object
+    required: [uri]
+    properties:
+      uri:
+        type: string
+        format: uri
+        description: |
+          Git URI (HTTPS or SSH; HTTPS recommended). Same URI is used for
+          every generation of the repo; generations and their release pins
+          vary by ref, not by URI. Never embed a token in the URI -- use
+          `auth` instead.
+      auth:
+        type: string
+        pattern: "^\\$\\{(vault\\.[a-z][a-zA-Z0-9]*|env\\.[A-Za-z_][A-Za-z0-9_]*)\\}$"
+        description: |
+          Credential pointer for private repos: exactly one `${vault.X}`
+          (preferred -- resolved token gets secret tagging) or `${env.X}`
+          token. Literal credentials and inline mixing are rejected. The
+          env var holds the raw token (e.g. a GitHub access token); the
+          engine injects it ephemerally at clone/fetch time. Omitted =>
+          ambient git credentials (SSH agent, credential helper).
+    additionalProperties: false
+
+  Release:
+    type: object
+    additionalProperties: false
+    description: |
+      One release pin under a generation: an immutable code point. Set at
+      most one of `branch`, `tag`, or `commit` (omit all three to track the
+      remote default branch — engine warns). Optionally flag one pin per
+      generation with `latest: true` — the default the plan uses when it
+      selects no release for the generation. All pins of a generation must
+      build the same action interface (not enforced by the engine).
+    properties:
+      branch:
+        type: string
+        description: Branch to check out (mutable — pulls latest on update).
+      tag:
+        type: string
+        description: Tag to check out (immutable; recommended for production).
+      commit:
+        type: string
+        description: Git commit SHA (40 hex chars or short SHA; immutable).
+      latest:
+        type: boolean
+        description: |
+          Marks this pin as the generation's default — used when a plan
+          selects no release for the generation. At most one release per
+          generation may set it (not enforced by the schema).
+    # At most one of branch / tag / commit may be present.
+    allOf:
+      - not:
+          anyOf:
+            - required: [branch, tag]
+            - required: [branch, commit]
+            - required: [tag, commit]
+
+  RepoConfig:
+    type: object
+    required: [framework, repository, generations]
+    properties:
+      framework:
+        enum: [foundry, hardhat, custom, none]
+        description: |
+          Default framework for all generations of this repo. Generations
+          may override via their own `framework` field.
+      frameworkInstall:
+        type: string
+        description: |
+          Default override for the framework's install command. Generations
+          may override via their own `frameworkInstall` field.
+      packageManager:
+        enum: [yarn, npm, pnpm, custom, none]
+        description: Default package manager for all generations of this repo.
+      packageManagerInstall:
+        type: string
+        description: Default override for the package manager's install command.
+      repository:
+        $ref: "#/$defs/Repository"
+      generations:
+        type: object
+        minProperties: 1
+        # Generation IDs are arbitrary non-empty DOT-FREE strings (the dot
+        # separates the segments of the fully-qualified action id and of the
+        # plan's releases selector keys). No other naming convention is
+        # enforced. Convention encouraged in the docs: short, human-
+        # meaningful interface-version names (e.g. v1, v2-escrow, 2026-04-cutover).
+        patternProperties:
+          "^[^.]+$":
+            $ref: "#/$defs/Generation"
+        additionalProperties: false
+    additionalProperties: false
+
+  Generation:
+    type: object
+    required: [releases, actions]
+    properties:
+      releases:
+        type: object
+        minProperties: 1
+        # Release IDs are arbitrary non-empty strings (no enforced naming
+        # convention). Convention encouraged in the docs: short, human-
+        # meaningful version-like names (e.g. v1.0.0, v2.1.0, jan-hotfix).
+        patternProperties:
+          ".+":
+            $ref: "#/$defs/Release"
+        additionalProperties: false
+      framework:
+        enum: [foundry, hardhat, custom, none]
+        description: |
+          Per-generation override of the repo's `framework`. Use when an
+          older generation needs a different framework version.
+      frameworkInstall:
+        type: string
+        description: Per-generation override of the repo's `frameworkInstall`.
+      packageManager:
+        enum: [yarn, npm, pnpm, custom, none]
+        description: Per-generation override of the repo's `packageManager`.
+      packageManagerInstall:
+        type: string
+        description: Per-generation override of the repo's `packageManagerInstall`.
+      actions:
+        type: object
+        # Each generation owns its own actions map. Creating a new generation
+        # of an existing repo means copying the prior generation's `actions`
+        # block and editing it to match the new interface. The two are
+        # independent thereafter — by design (see docs).
+        patternProperties:
+          # Action ID convention: lowercase, hyphenated.
+          "^[a-z][a-z0-9-]*$":
+            oneOf:
+              - $ref: "#/$defs/MakeAction"
+              - $ref: "#/$defs/Hardhat2ContractAction"
+              - $ref: "#/$defs/Hardhat3ContractAction"
+              - $ref: "#/$defs/Hardhat3ModuleAction"
+              - $ref: "#/$defs/ForgeContractAction"
+              - $ref: "#/$defs/ForgeScriptAction"
+              - $ref: "#/$defs/Hardhat2ScriptAction"
+              - $ref: "#/$defs/Hardhat3ScriptAction"
+              - $ref: "#/$defs/ScriptAction"
+              - $ref: "#/$defs/ContractCallAction"
+        additionalProperties: false
+    additionalProperties: false
+
+  # ----- Output entries: plain string or OutputSpec object -----
+  OutputEntry:
+    oneOf:
+      - type: string
+        pattern: "^[a-zA-Z][a-zA-Z0-9_]*$"
+        description: |
+          Plain output name: the key the command writes in .env.outputs and
+          the name downstream mappings reference. No templates or ${...}
+          references. SCREAMING_SNAKE_CASE recommended; legacy OPS_* names
+          accepted by the same regex.
+      - $ref: "#/$defs/OutputSpec"
+
+  OutputSpec:
+    type: object
+    required: [name]
+    additionalProperties: false
+    description: |
+      Object form of an output: a name plus optional arity (`array`).
+      Mirrors the InputSpec shape.
+    properties:
+      name:
+        type: string
+        pattern: "^[a-zA-Z][a-zA-Z0-9_]*$"
+        description: Output name (same regex as the plain-string form).
+      array:
+        type: boolean
+        default: false
+        description: |
+          Marks the output as array-valued. The command reports it in
+          .env.outputs as a single JSON-array string (mirror of the
+          array-input serialization in .env.automation); the engine parses
+          it into a list at collect time. Downstream it feeds an
+          `array: true` input whole, or a scalar input via a workflow
+          `pick` / index ref (stepId.OUTPUT[i]).
+
+  # ----- Input entries: plain string or InputSpec object -----
+  InputEntry:
+    oneOf:
+      - type: string
+        pattern: "^[a-zA-Z][a-zA-Z0-9_]*$"
+        description: |
+          Plain input parameter name. SCREAMING_SNAKE_CASE recommended;
+          legacy OPS_* names accepted by the same regex.
+      - $ref: "#/$defs/InputSpec"
+
+  InputSpec:
+    type: object
+    required: [name]
+    additionalProperties: false
+    description: |
+      Object form of an input: a parameter name plus optional arity (`array`)
+      and an authoritative encoding `transform`. Structural grouping (array /
+      abiEncode / ...) is NOT declared here — it lives in workflow mappings as
+      a `combine`. The action declares only the destination arity and the
+      scalar encoding coercion.
+    properties:
+      name:
+        type: string
+        pattern: "^[a-zA-Z][a-zA-Z0-9_]*$"
+        description: Input parameter name (same regex as the plain-string form).
+      transform:
+        description: |
+          The input's authoritative encoding coercion — a single transform
+          name or a chain (applied left to right). Applied LAST when producing
+          the value and NOT overridable by a workflow (a workflow may only add
+          adaptation transforms before it). Valid only on scalar inputs —
+          rejected when `array: true` (enforced by the loader, not this schema).
+        oneOf:
+          - $ref: "#/$defs/EncodingTransform"
+          - type: array
+            minItems: 1
+            items:
+              $ref: "#/$defs/EncodingTransform"
+      array:
+        type: boolean
+        default: false
+        description: |
+          Marks the parameter as array-valued (e.g. a Solidity address[]).
+          The action declares only the arity; the workflow assembles the list
+          from multiple sources via a `combine` (see workflows schema).
+
+  # ----- Encoding transforms: 1->1 value coercions -----
+  EncodingTransform:
+    enum: [salt, keccak256]
+    description: |
+      Encoding transform (1->1 value coercion). salt: a 0x+64hex value is used
+      verbatim, any other string is keccak256(string). keccak256: keccak256 of
+      the value, always.
+
+  # ----- ActionBase — common fields on every action, regardless of type or deploys -----
+  ActionBase:
+    type: object
+    required: [type, inputs, outputs]
+    properties:
+      type: { type: string }
+      description: { type: string }
+      alias:
+        type: string
+        pattern: "^[a-z][a-z0-9-]*$"
+        description: |
+          Optional short handle for the action, usable in a workflow step's
+          `action` field in place of the full
+          <repoId>.<generationId>.<actionId>, and surfaced in the UI editor.
+          Must be unique across all actions (enforced by the loader, not this
+          schema). Workflow steps reference actions and workflows through
+          separate fields (`action` vs `workflow`), so an alias may share a
+          name with a workflow id — there is no cross-config uniqueness rule
+          between them.
+      deploys:
+        type: boolean
+        description: |
+          Discriminator for the deployment surface. Per-type rule:
+            - forge-contract / hardhat2-contract / hardhat3-contract /
+              hardhat3-module: rejected (fixed-true)
+            - make / forge-script / hardhat2-script / hardhat3-script:
+              required-explicit
+            - script: defaults to false
+            - contract-call: rejected (fixed-false)
+      inputs:
+        type: array
+        items:
+          $ref: "#/$defs/InputEntry"
+        description: |
+          Parameters the action consumes. Each entry is either a plain string
+          (the parameter name) or an InputSpec object { name, transform?,
+          array? }. Order matters for contract types (treated as constructor
+          argument order); on hardhat3-module, inputs are passed by name as
+          Ignition module parameters and order is irrelevant.
+          SCREAMING_SNAKE_CASE is recommended; legacy OPS_* names are accepted
+          by the same regex. `transform` is the input's authoritative encoding
+          coercion (salt|keccak256, single or chain), applied last and not
+          overridable by a workflow; it is valid only on scalar inputs
+          (rejected when array: true — loader). `array: true` marks an
+          array-valued parameter (the workflow assembles it via a `combine`).
+          Structural transforms are never declared here.
+          The private key is never declared here — the engine injects it as
+          SEC_PRIVATE_KEY, sourced from ${secret.privateKey}. There are no
+          reserved private-key input names.
+          Built-in parameter names (builtin.<NAME>, e.g. builtin.CALL_ADDRESS)
+          can never appear here — the name regex forbids the dot. They are
+          declared by the action type in engine code and sourced from plan
+          constants / workflow mappings. Deployment method and CREATE3
+          factory/salt are not inputs either — method is the workflow step
+          method, factory/salt the plan deploy block.
+      inputConstants:
+        type: object
+        description: |
+          Hard-coded literal values for selected inputs. Each key must also
+          appear in `inputs`. Values are literal strings only (no ${...}
+          substitutions). Treated as hard constants: the plan and workflow
+          mappings cannot override them.
+        patternProperties:
+          "^[a-zA-Z][a-zA-Z0-9_]*$":
+            type: string
+        additionalProperties: false
+      outputs:
+        type: array
+        items:
+          $ref: "#/$defs/OutputEntry"
+      workingDir: { type: string }
+      enrichers:
+        type: array
+        items: { type: string }
+        description: |
+          Names of additional enrichers (registered in the engine code) to
+          append after the action type's required defaults. The type defines
+          the minimal required set; author entries cannot replace it.
+      writers:
+        type: array
+        items: { type: string }
+        description: |
+          Names of additional writers (registered in the engine code) to
+          append after the action type's required defaults. Same append-only
+          semantics as `enrichers`.
+      idempotent:
+        type: boolean
+        description: |
+          If true, the engine skips re-execution when a prior attempt for
+          this step already succeeded under the same deployment_id and chain
+          (recorded outputs are replayed). Defaults vary by `type`:
+            - forge-contract / hardhat2-contract / hardhat3-contract /
+              hardhat3-module: defaults true
+            - make / forge-script / hardhat2-script / hardhat3-script /
+              script / contract-call: defaults false
+      requiresPrivateKey:
+        type: boolean
+        default: false
+        description: |
+          Only valid on non-deploying actions (deploys: false). Opt-in to
+          having ${secret.privateKey} injected. On deploying actions,
+          PK is implicit and this field is rejected. Also rejected on
+          contract-call, where `mode: send` drives PK injection.
+    # Fields removed by the deployment-interface redesign — rejected on
+    # every action. Outputs come from .env.outputs only (written by the
+    # single `command` itself); artifacts go into SYS_ARTIFACTS_DIR;
+    # verification is inline (SYS_VERIFY).
+    not:
+      anyOf:
+        - required: [captureAbi]
+        - required: [captureAbiPath]
+        - required: [deployArtifactPath]
+        - required: [verifyCommand]
+        - required: [collectCommand]
+        - required: [write]
+
+  # ----- DeploymentFields — applied when deploys is true -----
+  DeploymentFields:
+    type: object
+    properties:
+      verify:
+        type: boolean
+        default: false
+        description: |
+          Master switch for verification. When false (or omitted), the
+          engine never sets SYS_VERIFY and verification never happens for
+          this action on any chain, regardless of plan or CLI flags. When
+          true, the engine passes SYS_VERIFY=1 plus the selected verification
+          profile's context (SYS_VERIFICATION_API, SYS_VERIFIER_TYPE,
+          SEC_VERIFICATION_API_KEY) to the command, provided the plan's
+          chain reference selects at least one verification profile in
+          known-chains (verifiers: not false); the command verifies inline.
+      supportsMultisig:
+        type: boolean
+        default: false
+        description: |
+          Declares that the action's author-written command honors the
+          multisig planning contract (SYS_MULTISIG=1 => broadcast nothing,
+          simulate as SYS_SENDER_ADDRESS, write planned transactions to
+          .deploy-pad-transactions.json and predicted outputs to
+          .env.outputs). Required (true) for a deploying action of an
+          author-command type (make / forge-script / hardhat2-script /
+          hardhat3-script / script) to run in multisig mode — validation
+          fails otherwise. Irrelevant for bundled contract/module types
+          (their engine-owned machinery complies automatically). See
+          docs/specs/multisig.md#what-action-authors-must-do.
+
+  # ----- Reusable: rejection of deployment fields on non-deploying branches -----
+  RejectsDeploymentFields:
+    not:
+      anyOf:
+        - required: [verify]
+        - required: [supportsMultisig]
+
+  # ----- Reusable: rejection of requiresPrivateKey on deploying branches -----
+  RejectsRequiresPrivateKey:
+    not:
+      required: [requiresPrivateKey]
+
+  # ===== type: forge-contract — fixed-true `deploys` =====
+  ForgeContractAction:
+    allOf:
+      - $ref: "#/$defs/ActionBase"
+      - $ref: "#/$defs/DeploymentFields"
+      - type: object
+        required: [contract]
+        properties:
+          type:
+            const: forge-contract
+          contract:
+            type: string
+            description: Foundry contract reference, "path/to/Source.sol:ContractName".
+        # Reject `deploys` (fixed-true), `requiresPrivateKey` (implicit on
+        # deploying actions), the legacy `method` field (replaced by the
+        # workflow step method + plan deploy block), and make-only /
+        # script-only / module-only fields.
+        not:
+          anyOf:
+            - required: [deploys]
+            - required: [requiresPrivateKey]
+            - required: [method]
+            - required: [command]
+            - required: [script]
+            - required: [function]
+            - required: [task]
+            - required: [runtime]
+            - required: [module]
+
+  # ===== type: hardhat2-contract — fixed-true `deploys` (Hardhat 2) =====
+  Hardhat2ContractAction:
+    allOf:
+      - $ref: "#/$defs/ActionBase"
+      - $ref: "#/$defs/DeploymentFields"
+      - type: object
+        required: [contract]
+        properties:
+          type:
+            const: hardhat2-contract
+          contract:
+            type: string
+            description: Hardhat contract name as registered in artifacts.
+        not:
+          anyOf:
+            - required: [deploys]
+            - required: [requiresPrivateKey]
+            - required: [method]
+            - required: [command]
+            - required: [script]
+            - required: [function]
+            - required: [task]
+            - required: [runtime]
+            - required: [module]
+
+  # ===== type: hardhat3-contract — fixed-true `deploys` (Hardhat 3 / Ignition) =====
+  # Single named contract on Hardhat 3. The engine generates a minimal
+  # Ignition module for the contract and deploys it via its bundled wrapper;
+  # the author surface mirrors the other contract types. The resolved
+  # deployment method (workflow step method) maps to Ignition
+  # strategies (create -> basic, create2 -> create2 + derived salt);
+  # create3 is not supported and fails at run time.
+  Hardhat3ContractAction:
+    allOf:
+      - $ref: "#/$defs/ActionBase"
+      - $ref: "#/$defs/DeploymentFields"
+      - type: object
+        required: [contract]
+        properties:
+          type:
+            const: hardhat3-contract
+          contract:
+            type: string
+            description: Hardhat contract name as registered in artifacts.
+        not:
+          anyOf:
+            - required: [deploys]
+            - required: [requiresPrivateKey]
+            - required: [method]
+            - required: [command]
+            - required: [script]
+            - required: [function]
+            - required: [task]
+            - required: [runtime]
+            - required: [module]
+
+  # ===== type: hardhat3-module — fixed-true `deploys` (Hardhat 3 / Ignition) =====
+  # Deploys an authored Ignition module via the engine's bundled wrapper
+  # (hre.ignition.deploy — no journal parsing). Inputs are passed BY NAME
+  # as module parameters (order irrelevant); outputs are the module's
+  # returned contracts, one entry per return-object key (declared output
+  # names must equal those keys). Same deployment-method -> strategy mapping
+  # as hardhat3-contract; create3 fails at run time.
+  Hardhat3ModuleAction:
+    allOf:
+      - $ref: "#/$defs/ActionBase"
+      - $ref: "#/$defs/DeploymentFields"
+      - type: object
+        required: [module]
+        properties:
+          type:
+            const: hardhat3-module
+          module:
+            type: string
+            description: |
+              Path to the Ignition module file, relative to the repo root
+              (e.g. "ignition/modules/Apollo.ts").
+        not:
+          anyOf:
+            - required: [deploys]
+            - required: [requiresPrivateKey]
+            - required: [contract]
+            - required: [method]
+            - required: [command]
+            - required: [script]
+            - required: [function]
+            - required: [task]
+            - required: [runtime]
+
+  # ===== type: make — required-explicit `deploys` =====
+  MakeAction:
+    allOf:
+      - $ref: "#/$defs/ActionBase"
+      - type: object
+        required: [deploys, command]
+        properties:
+          type:
+            const: make
+          command:
+            type: string
+            description: |
+              Make target name (without `make`). The target must write
+              .env.outputs itself (wrap an existing recipe in a new target
+              if it can't be modified).
+        # Reject native- and script-specific fields:
+        not:
+          anyOf:
+            - required: [contract]
+            - required: [method]
+            - required: [script]
+            - required: [function]
+            - required: [task]
+            - required: [runtime]
+            - required: [module]
+      - oneOf:
+          # Non-deploying branch: deploys: false → reject deployment fields.
+          - allOf:
+              - properties:
+                  deploys: { const: false }
+              - $ref: "#/$defs/RejectsDeploymentFields"
+          # Deploying branch: deploys: true → apply DeploymentFields,
+          # reject requiresPrivateKey (implicit).
+          - allOf:
+              - properties:
+                  deploys: { const: true }
+              - $ref: "#/$defs/DeploymentFields"
+              - $ref: "#/$defs/RejectsRequiresPrivateKey"
+
+  # ===== type: forge-script — required-explicit `deploys` =====
+  ForgeScriptAction:
+    allOf:
+      - $ref: "#/$defs/ActionBase"
+      - type: object
+        required: [deploys, command]
+        properties:
+          type:
+            const: forge-script
+          command:
+            type: string
+            description: |
+              Foundry script reference, "path/to/Script.s.sol:ContractName".
+              The engine wraps with `forge script ...`. The script must
+              produce .env.outputs itself (vm.writeFile).
+          function:
+            type: string
+            default: "run()"
+            description: Function to invoke on `command`.
+        not:
+          anyOf:
+            - required: [contract]
+            - required: [method]
+            - required: [script]
+            - required: [task]
+            - required: [runtime]
+            - required: [module]
+      - oneOf:
+          - allOf:
+              - properties:
+                  deploys: { const: false }
+              - $ref: "#/$defs/RejectsDeploymentFields"
+          - allOf:
+              - properties:
+                  deploys: { const: true }
+              - $ref: "#/$defs/DeploymentFields"
+              - $ref: "#/$defs/RejectsRequiresPrivateKey"
+
+  # ===== type: hardhat2-script — required-explicit `deploys` (Hardhat 2) =====
+  Hardhat2ScriptAction:
+    allOf:
+      - $ref: "#/$defs/ActionBase"
+      - type: object
+        required: [deploys, command]
+        properties:
+          type:
+            const: hardhat2-script
+          command:
+            type: string
+            description: |
+              Path to the Hardhat script wrapper (e.g. "scripts/post-deploy.ts").
+              The engine wraps with `npx hardhat run` (Hardhat 2 toolchain).
+              To invoke a Hardhat task, write a wrapper that calls
+              `hre.run("<task>", ...)`. The wrapper must write .env.outputs
+              itself.
+        not:
+          anyOf:
+            - required: [contract]
+            - required: [method]
+            - required: [script]
+            - required: [task]
+            - required: [function]
+            - required: [runtime]
+            - required: [module]
+      - oneOf:
+          - allOf:
+              - properties:
+                  deploys: { const: false }
+              - $ref: "#/$defs/RejectsDeploymentFields"
+          - allOf:
+              - properties:
+                  deploys: { const: true }
+              - $ref: "#/$defs/DeploymentFields"
+              - $ref: "#/$defs/RejectsRequiresPrivateKey"
+
+  # ===== type: hardhat3-script — required-explicit `deploys` (Hardhat 3) =====
+  # Same author surface as hardhat2-script; the type selects the Hardhat 3
+  # toolchain. Inside the wrapper, network access follows Hardhat 3's
+  # `network.connect()` API instead of Hardhat 2's preconfigured global hre.
+  Hardhat3ScriptAction:
+    allOf:
+      - $ref: "#/$defs/ActionBase"
+      - type: object
+        required: [deploys, command]
+        properties:
+          type:
+            const: hardhat3-script
+          command:
+            type: string
+            description: |
+              Path to the Hardhat script wrapper (e.g. "scripts/post-deploy.ts").
+              The engine wraps with `npx hardhat run` (Hardhat 3 toolchain).
+              The wrapper must write .env.outputs itself.
+        not:
+          anyOf:
+            - required: [contract]
+            - required: [method]
+            - required: [script]
+            - required: [task]
+            - required: [function]
+            - required: [runtime]
+            - required: [module]
+      - oneOf:
+          - allOf:
+              - properties:
+                  deploys: { const: false }
+              - $ref: "#/$defs/RejectsDeploymentFields"
+          - allOf:
+              - properties:
+                  deploys: { const: true }
+              - $ref: "#/$defs/DeploymentFields"
+              - $ref: "#/$defs/RejectsRequiresPrivateKey"
+
+  # ===== type: script — generic user-supplied script, defaults `deploys: false` =====
+  # Replaces the legacy `bash-script` / `node-script` / `ts-script` types.
+  # The `runtime` field selects the interpreter; the engine has no framework
+  # knowledge for this type — the script communicates with the engine purely
+  # through the deployment interface (.env.outputs + SYS_ARTIFACTS_DIR).
+  ScriptAction:
+    allOf:
+      - $ref: "#/$defs/ActionBase"
+      - type: object
+        required: [command]
+        properties:
+          type:
+            const: script
+          deploys:
+            type: boolean
+            default: false
+          command:
+            type: string
+            description: |
+              Path to the script (relative to the repo root or workingDir).
+              Executed via the configured `runtime` as `<runtime> <command>`.
+              The script must write .env.outputs itself.
+          runtime:
+            enum: [bash, node, tsx, ts-node]
+            default: bash
+            description: Interpreter used for `command`.
+        not:
+          anyOf:
+            - required: [contract]
+            - required: [method]
+            - required: [script]
+            - required: [function]
+            - required: [task]
+            - required: [module]
+      - oneOf:
+          # Non-deploying branch: deploys absent (defaults false) or explicitly false.
+          - allOf:
+              - anyOf:
+                  - not: { required: [deploys] }
+                  - properties: { deploys: { const: false } }
+              - $ref: "#/$defs/RejectsDeploymentFields"
+          # Deploying branch: deploys explicitly true.
+          - allOf:
+              - required: [deploys]
+              - properties:
+                  deploys: { const: true }
+              - $ref: "#/$defs/DeploymentFields"
+              - $ref: "#/$defs/RejectsRequiresPrivateKey"
+
+  # ===== type: contract-call — fixed-false `deploys` (contract method call) =====
+  # Calls a method on an already-deployed contract — the equivalent of
+  # `cast call` (read) / `cast send` (write), performed by the engine itself
+  # in-process (no framework, no external tool, no subprocess). The target
+  # address comes from the type's built-in parameter builtin.CALL_ADDRESS
+  # (plan constants or per-step workflow mapping), never from an action
+  # field. Never a deployment: the deployment surface and `deploys` itself
+  # are rejected.
+  ContractCallAction:
+    allOf:
+      - $ref: "#/$defs/ActionBase"
+      - type: object
+        required: [signature]
+        properties:
+          type:
+            const: contract-call
+          signature:
+            type: string
+            description: |
+              Cast-style function signature, e.g. "transfer(address,uint256)"
+              or "balanceOf(address)(uint256)". For reads, include the return
+              types — they drive decoding of the result.
+          mode:
+            enum: [call, send]
+            default: call
+            description: |
+              How the call is issued — same vocabulary as `cast`:
+              `call` (default) => static eth_call: no transaction, no private
+              key. `send` => signs and publishes a state-changing transaction;
+              the engine injects ${secret.privateKey}. Do not set
+              requiresPrivateKey — `mode` drives PK injection on this type.
+        # Reject `deploys` (fixed-false), `requiresPrivateKey` (PK is driven
+        # by `mode`), and fields belonging to other types.
+        not:
+          anyOf:
+            - required: [deploys]
+            - required: [requiresPrivateKey]
+            - required: [contract]
+            - required: [method]
+            - required: [command]
+            - required: [script]
+            - required: [function]
+            - required: [task]
+            - required: [runtime]
+            - required: [module]
+      - $ref: "#/$defs/RejectsDeploymentFields"
+      # Send calls cannot produce outputs — a mined transaction only yields a
+      # receipt, never the Solidity function's return value. Require an empty
+      # outputs array on the send branch.
+      - if:
+          required: [mode]
+          properties:
+            mode: { const: send }
+        then:
+          properties:
+            outputs:
+              maxItems: 0

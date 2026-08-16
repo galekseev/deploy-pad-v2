@@ -1,0 +1,103 @@
+# yaml-language-server: $schema=https://json-schema.org/draft/2020-12/schema
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://deploy-pad.local/schemas/global-params.schema.yaml"
+title: GlobalParams
+description: |
+  Three top-level sections, all optional:
+
+  - defaults / chains: centralized chain-aware constants reusable across
+    workflows via ${global.NAME}. Defaults provide chain-agnostic baseline
+    values; per-chain entries override them.
+  - vault: registry mapping author-chosen secret names to ${env.VAR}
+    references, consumed via ${vault.NAME} from plan secrets values,
+    known-chains connection credentials (verification api_key, RPC
+    headers), repository.auth in actions.yaml, and the multisig
+    registry's proposer/executor. Pointers only — never literal
+    credentials.
+
+type: object
+
+properties:
+
+  version:
+    type: integer
+    description: |
+      Config format version this file is written against (current: 2).
+      The engine compares it to the format version it supports at load
+      time. A differing version is a load-time error that aborts the run
+      unless `--ignore-version` is passed, which downgrades it to a
+      warning and proceeds. A missing version is always a warning.
+
+  defaults:
+    type: object
+    description: Chain-agnostic baseline values for the constants registry.
+    properties:
+      constants:
+        type: object
+        description: |
+          Map of global parameter name to constant value.
+          Keys SHOULD use SCREAMING_SNAKE_CASE.
+        patternProperties:
+          "^[A-Z][A-Z0-9_]*$":
+            type: string
+        additionalProperties: false
+    additionalProperties: false
+
+  chains:
+    type: object
+    description: |
+      Per-chain overrides for the constants registry. Keys must be valid
+      chain names (lowercase, hyphenated; see known-chains.yaml).
+    patternProperties:
+      "^[a-z][a-z0-9-]*$":
+        type: object
+        properties:
+          constants:
+            type: object
+            patternProperties:
+              "^[A-Z][A-Z0-9_]*$":
+                type: string
+            additionalProperties: false
+        additionalProperties: false
+    additionalProperties: false
+
+  vault:
+    type: object
+    description: |
+      Registry mapping author-chosen secret names to ${env.VAR} references.
+      Each entry is a POINTER, never a credential. Values must be exactly
+      "${env.VAR}" — literal credentials, inline strings, and other
+      namespaces are rejected. Not chain-aware; one entry maps one name to
+      one env var globally. Per-chain wiring lives in plan
+      chains.<c>.secrets. Consumed via ${vault.NAME} from plan secrets
+      values, known-chains connection credentials, repository.auth, and
+      multisig proposer/executor. Resolved values are tagged as secrets by
+      the engine (env-only injection, log redaction by entry name).
+    patternProperties:
+      "^[a-z][a-zA-Z0-9]*$":
+        type: string
+        description: |
+          Author-chosen secret name (camelCase identifier). Value must be
+          an ${env.VAR} env ref.
+        pattern: "^\\$\\{env\\.[A-Za-z_][A-Za-z0-9_]*\\}$"
+    additionalProperties: false
+
+additionalProperties: false
+
+examples:
+  - version: 2
+    defaults:
+      constants:
+        DEFAULT_OWNER: "0x0BD61d605C64A857C3D94779aEf7cA295702b3A2"
+        PERMIT2: "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+    chains:
+      mainnet:
+        constants:
+          WETH: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+      base:
+        constants:
+          WETH: "0x4200000000000000000000000000000000000006"
+    vault:
+      privateKey: "${env.PK_REGULAR_DEPLOYER}"
+      create3Deployer: "${env.PK_CREATE3}"
+      etherscanKey: "${env.ETHERSCAN_KEY}"

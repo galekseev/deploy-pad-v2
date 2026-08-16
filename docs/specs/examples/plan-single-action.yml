@@ -1,0 +1,78 @@
+# yaml-language-server: $schema=../schemas/plans.schema.yaml
+#
+# SINGLE-ACTION PLAN — runs one action without authoring a workflow (see
+# plans.md -> Single-action plans). The `workflow:` field holds an INLINE
+# STEP OBJECT instead of a workflow id: the plan's workflow is that one
+# step, written in the exact grammar of a workflows.yaml step. Presets,
+# chain scope, overrides, records, and multisig mode all behave exactly as
+# for a workflow plan.
+#
+# The action here is `transfer-fee-collector-ownership` from actions.yml —
+# a contract-call (mode: send) that transfers FeeCollector ownership. Run it
+# once on every chain:
+#
+#   yarn deploy-pad run -e transfer-fee-collector-ownership
+#
+# or through a Safe (the flagship multisig one-off — nothing changes in this
+# file):
+#
+#   yarn deploy-pad run -e transfer-fee-collector-ownership --multisig ops-main
+
+version: 2
+
+# Inline step instead of a workflow id. Allowed fields: action (required),
+# method, factory. Rejected: id (the derived step id is canonical),
+# mappings (no prior step to wire from), nested workflow (use the string
+# form). Promotion path: when the one-off grows a second step, move this
+# object verbatim into a workflows.yaml `steps:` list and point `workflow:`
+# at the new id.
+workflow:
+  action: evm-helpers.cronos-2026.transfer-fee-collector-ownership
+  # For a CONTRACT/MODULE action, the deploy strategy would ride along here,
+  # exactly as on a workflows.yaml step:
+  #   method: create3
+  #   factory: oneInch
+  # (Salt/factory-address DATA still goes in the presets' deploy blocks,
+  # keyed by the implicit step id.)
+
+# The implicit step id is the action's default step id — the last FQ
+# segment: `transfer-fee-collector-ownership`. It would key any
+# deploy.salts / deploy.factories entries (none needed here — the action
+# deploys nothing). Results land under the FQ action id:
+#   workspace/results/evm-helpers.cronos-2026.transfer-fee-collector-ownership/<deployment_id>/<chain>/
+
+# Chain references into known-chains.yml — the ownership transfer runs once
+# on each of these.
+chains:
+  mainnet: {}
+  matic: {}
+  sepolia: {}
+
+presets:
+  # Deployment id derives from the preset name (no --deployment-id given):
+  # this launch runs as `handover-2026`.
+  handover-2026:
+    type: production
+    defaults:
+      constants:
+        # Inputs resolve from same-named constants — there is no mappings
+        # surface (nothing to wire from with a single step).
+        NEW_OWNER_ADDRESS: "${global.DEFAULT_OWNER}"
+      secrets:
+        # The one signing key — multi-PK renames don't apply here. The vault
+        # entry resolves against global-params.yml -> ${env.PK_REGULAR_DEPLOYER}.
+        privateKey: "${vault.privateKey}"
+    chains:
+      # The target contract lives at a different address per chain, so the
+      # contract-call type's built-in parameter is a per-chain constant.
+      mainnet:
+        constants:
+          builtin.CALL_ADDRESS: "0x7f3Bd3c9E442eb6BC9f286d34095b46bE2c8B7E2"
+      matic:
+        constants:
+          builtin.CALL_ADDRESS: "0xA1c47b6E13d02cE3Fd8a2E0dD3d2C55E31e4B99D"
+      sepolia:
+        constants:
+          builtin.CALL_ADDRESS: "0x33fE7c25b0Fb0Cd26F0C63E6318a6E43BbCfE407"
+
+default_preset: handover-2026

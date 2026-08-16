@@ -1,0 +1,62 @@
+# yaml-language-server: $schema=../schemas/global-params.schema.yaml
+#
+# Worked global-parameters registry demonstrating both stores: chain-aware
+# constants (a chain-agnostic baseline in `defaults.constants` with per-chain
+# overrides) and the flat `vault:` block of named secret pointers. Vault
+# values are `${env.VAR}` references only — no literal credential ever lands
+# in this file. Notable behaviors are annotated inline below.
+
+version: 2
+
+defaults:
+  constants:
+    DEFAULT_OWNER: "0x0BD61d605C64A857C3D94779aEf7cA295702b3A2"
+    PERMIT2: "0x000000000022D473030F116dDEE9F6B43aC78BA3"
+    LOP_V4: "0x111111125421ca6dc452d289314280a0f8842a65"
+    CREATE3_DEPLOYER: "0xD935a2bb926019E0ed6fb31fbD5b1Bbb7c05bf65"
+    # CREATE3 factory addresses consumed by examples/plan.yml
+    # (deploy.factories entries reference them per step).
+    FACTORY_A: "0x65B3Db8bAeF0215A1F9B14c506D2a3078b2C84AE"
+    FACTORY_A_ZKSYNC: "0x9B1f0E0Cd48F9F41B96CcE43Ec7b4A4dF3c5FdA7"
+    ZERO_ADDRESS: "0x0000000000000000000000000000000000000000"
+
+chains:
+  mainnet:
+    constants:
+      WETH: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+  base:
+    constants:
+      WETH: "0x4200000000000000000000000000000000000006"
+  arbitrum:
+    constants:
+      WETH: "0x82aF49447D8a07e3bd95BD0d56f35241523fBab1"
+  zksync:
+    constants:
+      WETH: "0x5AEa5775959fBC2557Cc8789bC1bf90A239D9a91"
+      PERMIT2: "0x0000000000225e31d15943971f47ad3022f714fa"   # overrides the default on zksync only
+      LOP_V4: "0x6fd4383cb451173d5f9304f041c7bcbf27d561ff"
+  sepolia:
+    constants:
+      WETH: "0x7b79995e5f793A07Bc00c21412e50Ecae098E7f9"
+      CREATE3_DEPLOYER: "0xAc8984d8a9D02baBBDcc2Cabc54Ff6Bf8C7fbB0f"
+
+vault:
+  # Deployer keys — consumed from plan secrets: blocks via ${vault.X}.
+  privateKey: "${env.PK_REGULAR_DEPLOYER}"
+  create3Deployer: "${env.PK_CREATE3}"
+  sameNonceDeployer: "${env.PK_SAMENONCE}"
+  # Connection credentials — consumed by examples/known-chains.yml
+  # (verification api_key profiles; the private RPC profile's header;
+  # the alchemy profile's URL-embedded key).
+  etherscanKey: "${env.ETHERSCAN_KEY}"
+  etherscanKeyTeamB: "${env.ETHERSCAN_KEY_TEAMB}"
+  blockscoutKey: "${env.BLOCKSCOUT_KEY}"
+  rpcAuthToken: "${env.RPC_AUTH_TOKEN}"
+  alchemyKey: "${env.ALCHEMY_KEY}"
+  # Git read token — consumed by repository.auth in actions.yaml.
+  gitHubToken: "${env.GH_DEPLOY_TOKEN}"
+  # Multisig-mode credentials — consumed by examples/multisig.yml
+  # (proposer / executor; never Safe owner keys).
+  opsProposer: "${env.PK_OPS_PROPOSER}"
+  opsExecutor: "${env.PK_OPS_EXECUTOR}"
+  merkleExecutor: "${env.PK_MERKLE_EXECUTOR}"

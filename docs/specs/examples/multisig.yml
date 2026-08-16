@@ -1,0 +1,38 @@
+# yaml-language-server: $schema=../schemas/multisig.schema.yaml
+#
+# Worked multisig registry demonstrating both execution backends. Each entry
+# is self-contained: backend + per-chain Safe addresses + credentials. The
+# `${vault.X}` credentials are pointers resolved against the `vault:` block
+# in global-params.yaml — no literal key ever lands in this file. Chain keys
+# must be names declared in known-chains.yaml. A run selects an entry with
+# `--multisig <name>`; the file you mount is the allowlist of Safes a run
+# may deploy through.
+
+version: 2
+
+multisigs:
+  # Day-to-day ops Safe — standard Safe UI flow, one batch signature per chain.
+  ops-main:
+    backend: multisend
+    proposer: "${vault.opsProposer}"          # Transaction Service delegate — queue-only, not an owner
+    executor: "${vault.opsExecutor}"          # optional: auto-execute at threshold
+    chains:
+      mainnet:
+        safe: "0x1234567890123456789012345678901234abcd"
+      base:
+        safe: "0x567890123456789012345678901234567890ef01"
+      cronos:
+        safe: "0x9999888877776666555544443333222211110000"
+        transaction_service: "https://safe-txs.internal.example"   # self-hosted service
+
+  # Treasury Safe for large multichain launches — one root signature total.
+  treasury-merkle:
+    backend: merkle
+    executor: "${vault.merkleExecutor}"       # pays per-leaf execution gas — holds no approval power
+    chains:
+      mainnet:
+        safe: "0x9abcdef09abcdef09abcdef09abcdef09abcdef0"
+        module: "0x1111222233334444555566667777888899990000"   # deploy module enabled on the Safe
+      base:
+        safe: "0x9abcdef09abcdef09abcdef09abcdef09abcdef0"
+        module: "0x1111222233334444555566667777888899990000"

@@ -1,0 +1,25 @@
+# Dependencies
+node_modules/
+.pnpm-store/
+
+# Build output
+dist/
+*.tsbuildinfo
+
+# Engine workspace — checkouts and records are machine-local, never committed
+workspace/repos/
+workspace/results/
+workspace/configs/.env
+
+# Secrets
+.env
+.env.*
+!.env.example
+
+# Test and tooling output
+coverage/
+*.log
+
+# Editor and OS
+.DS_Store
+.cursor/plans/

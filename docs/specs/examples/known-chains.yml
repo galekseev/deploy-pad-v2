@@ -1,0 +1,88 @@
+# yaml-language-server: $schema=../schemas/known-chains.schema.yaml
+#
+# Worked chain registry demonstrating every entry form: the string RPC
+# shorthand, the full form with several named RPC and verification profiles,
+# keyless verification, and named chain sets. Credentials are pointers only —
+# `${vault.X}` entries are looked up against the `vault:` block in
+# global-params.yaml; no literal key or token ever lands in this file.
+# Notable behaviors are annotated inline below.
+
+version: 2                # config format version — like `sets`, a reserved
+                          #   top-level key, never a chain name
+
+# String shorthand: one default RPC profile, no verification
+sepolia:
+  chain_id: 11155111
+  rpc: "${env.SEPOLIA_RPC_URL}"
+
+# Rich form with a single default profile per concern
+base:
+  chain_id: 8453
+  rpc: "${env.BASE_RPC_URL}"
+  verification:
+    default:
+      api: "https://api.etherscan.io/v2/api"
+      api_key: "${vault.etherscanKey}"
+
+# Full form: several RPC profiles, several verification profiles
+mainnet:
+  chain_id: 1
+  rpc:
+    default:
+      url: "${env.MAINNET_RPC_URL}"
+    private:                                  # authenticated endpoint — header-borne token
+      url: "https://web3.1inch.io/1/"
+      headers:
+        Authorization: "Bearer ${vault.rpcAuthToken}"   # displays as "Bearer [vault.rpcAuthToken]"
+    alchemy:                                  # URL-embedded key — route it through the vault:
+      url: "https://eth-mainnet.g.alchemy.com/v2/${vault.alchemyKey}"
+                                              # displays as ".../v2/[vault.alchemyKey]" everywhere
+  verification:
+    default:                                  # etherscan, team A account
+      api: "https://api.etherscan.io/v2/api"
+      api_key: "${vault.etherscanKey}"
+    etherscan-teamb:                          # same explorer, different account
+      api: "https://api.etherscan.io/v2/api"
+      api_key: "${vault.etherscanKeyTeamB}"
+    blockscout:
+      type: blockscout
+      api: "https://eth.blockscout.com/api"
+      api_key: "${vault.blockscoutKey}"
+
+# Keyless verification (Sourcify)
+matic:
+  chain_id: 137
+  rpc: "${env.MATIC_RPC_URL}"
+  verification:
+    default:
+      type: sourcify
+      api: "https://sourcify.dev/server"
+
+# No verification profiles at all — plans that run here either accept
+# verification-off (warning if the workflow has verify: true steps) or
+# disable it explicitly (verifiers: false, as examples/plan.yml does).
+zksync:
+  chain_id: 324
+  rpc: "${env.ZKSYNC_RPC_URL}"
+
+# Referenced by the multisig registry example (examples/multisig.yml) —
+# its entry overrides the Safe Transaction Service URL on this chain.
+cronos:
+  chain_id: 25
+  rpc: "${env.CRONOS_RPC_URL}"
+
+# Named chain sets — `sets` is a reserved top-level key, never a chain name.
+# Each member is a ChainConfig (selectors only), identical in shape to a plan
+# chains-block entry: a set is a named, pre-authored plan chains block.
+# Validated at registry load: members must be chains declared above, with
+# every selected profile existing and a selectable RPC profile per member.
+sets:
+  evm-prod:
+    mainnet:
+      rpc: private                     # fleet policy: prod runs use the private RPC
+      verifiers: [default, blockscout] # ...and verify on Etherscan AND Blockscout
+    base: {}                           # name-only member: default profiles
+    matic: {}
+  evm-staging:
+    sepolia: {}
+    base: {}

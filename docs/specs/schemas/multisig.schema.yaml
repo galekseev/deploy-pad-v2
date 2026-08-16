@@ -1,0 +1,155 @@
+# yaml-language-server: $schema=https://json-schema.org/draft/2020-12/schema
+$schema: "https://json-schema.org/draft/2020-12/schema"
+$id: "https://deploy-pad.local/schemas/multisig.schema.yaml"
+title: MultisigRegistry
+description: |
+  Registry of named multisig entries — the Safes a run can deploy through.
+  A run opts into multisig mode with the CLI selector `--multisig <name>`;
+  the named entry carries everything the mode needs: the execution backend
+  (multisend | merkle), the per-chain Safe addresses, and the credentials.
+  Plans and workflows carry no multisig data.
+
+  Each entry is self-contained and describes exactly one backend:
+  - multisend: batches proposed to the Safe Transaction Service; requires
+    a `proposer` delegate key; `module` is rejected.
+  - merkle: one signed root, leaves executed through a Safe module; requires
+    an `executor` key and a per-chain `module` address; `proposer` is rejected.
+
+  Credentials are pointers, never literal values: `proposer` / `executor`
+  must be a single ${vault.X} (preferred) or ${env.X} token. Neither is a
+  Safe owner key — the proposer only queues transactions, the executor only
+  pays gas. Owner keys never appear in deploy-pad configs.
+
+type: object
+required: [multisigs]
+additionalProperties: false
+
+properties:
+  version:
+    type: integer
+    description: |
+      Config format version this file is written against (current: 2).
+      The engine compares it to the format version it supports at load
+      time. A differing version is a load-time error that aborts the run
+      unless `--ignore-version` is passed, which downgrades it to a
+      warning and proceeds. A missing version is always a warning.
+  multisigs:
+    type: object
+    minProperties: 1
+    patternProperties:
+      # Entry name convention: lowercase, alphanumeric, hyphenated —
+      # same pattern as chain and profile names in known-chains.
+      "^[a-z][a-z0-9-]*$":
+        $ref: "#/$defs/MultisigEntry"
+    additionalProperties: false
+
+$defs:
+
+  SecretPointer:
+    type: string
+    description: |
+      Exactly one ${vault.X} token (preferred) or one ${env.X} token
+      (allowed) — literals and inline mixing are rejected. Tagged as a
+      secret and redacted in all engine output.
+    pattern: "^\\$\\{(vault\\.[a-z][a-zA-Z0-9]*|env\\.[A-Za-z_][A-Za-z0-9_]*)\\}$"
+
+  MultisigEntry:
+    type: object
+    required: [backend, chains]
+    additionalProperties: false
+    properties:
+      backend:
+        enum: [multisend, merkle]
+        description: |
+          Execution backend. multisend — one MultiSend batch per chain,
+          proposed to the Safe Transaction Service, signed per batch per
+          chain in the standard Safe UI. merkle — every transaction of the
+          run becomes a Merkle leaf, owners sign the root once, an executor
+          runs the leaves through the Safe's deploy module.
+      proposer:
+        $ref: "#/$defs/SecretPointer"
+        description: |
+          Delegate key for proposing batches to the Safe Transaction
+          Service (multisend backend). Queue-only — not an owner, holds no
+          approval power. Required on multisend entries; rejected on merkle.
+      executor:
+        $ref: "#/$defs/SecretPointer"
+        description: |
+          Key that executes on-chain: Merkle leaves (merkle backend —
+          required), or threshold-met batches when auto-execution is wanted
+          (multisend backend — optional; omit to execute from the Safe UI).
+          Pays gas only — holds no approval power.
+      chains:
+        type: object
+        minProperties: 1
+        description: |
+          Per-chain data. Keys must be chain names declared in
+          known-chains.yaml. Must cover every active chain of any run that
+          selects this entry (validation error otherwise).
+        patternProperties:
+          "^[a-z][a-z0-9-]*$":
+            $ref: "#/$defs/MultisigChain"
+        additionalProperties: false
+    allOf:
+      # multisend: proposer required, module-per-chain rejected via MultisigChain
+      - if:
+          properties:
+            backend: { const: multisend }
+        then:
+          required: [proposer]
+      # merkle: executor required, proposer rejected
+      - if:
+          properties:
+            backend: { const: merkle }
+        then:
+          required: [executor]
+          not:
+            required: [proposer]
+
+  MultisigChain:
+    type: object
+    required: [safe]
+    additionalProperties: false
+    properties:
+      safe:
+        type: string
+        minLength: 1
+        description: |
+          The Safe's address on this chain — the sender identity of every
+          planned transaction (SYS_SENDER_ADDRESS).
+      module:
+        type: string
+        minLength: 1
+        description: |
+          Address of the deploy module (Sphinx-based) enabled on this Safe.
+          Required on every chain of a merkle entry; rejected on multisend
+          entries (cross-field rule enforced by the engine loader — JSON
+          Schema cannot see the entry's backend from here).
+      transaction_service:
+        type: string
+        minLength: 1
+        description: |
+          Override for the Safe Transaction Service base URL (self-hosted
+          service, or a chain outside the hosted set). multisend only.
+          Omit on a chain with no service at all and rely on the offline
+          Transaction Builder export fallback.
+
+examples:
+  - version: 2
+    multisigs:
+      ops-main:
+        backend: multisend
+        proposer: "${vault.opsProposer}"
+        executor: "${vault.opsExecutor}"
+        chains:
+          mainnet:
+            safe: "0x1234567890123456789012345678901234abcd"
+          base:
+            safe: "0x567890123456789012345678901234567890ef01"
+      treasury-merkle:
+        backend: merkle
+        executor: "${vault.merkleExecutor}"
+        chains:
+          mainnet:
+            safe: "0x9abcdef09abcdef09abcdef09abcdef09abcdef0"
+            module: "0x1111222233334444555566667777888899990000"

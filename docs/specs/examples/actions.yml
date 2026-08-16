@@ -1,0 +1,326 @@
+# yaml-language-server: $schema=../schemas/actions.schema.yaml
+#
+# Worked actions.yaml catalog. Notable behaviors are annotated inline below.
+# No action declares a private-key input — PK comes from ${secret.privateKey}
+# per chain at execution time, injected into the command as SEC_PRIVATE_KEY.
+
+version: 2
+
+cross-chain-resolver:
+  framework: foundry
+  repository:
+    uri: "https://github.com/1inch/cross-chain-resolver.git"
+  generations:
+    v1:                              # generationId — FQ id middle segment
+      releases:
+        v1.0.0:                      # release pin id is NOT part of the FQ action id
+          branch: deploy/select3-or6-res
+          latest: true
+      actions:
+        crosschain-resolver:
+          # FQ id: cross-chain-resolver.v1.crosschain-resolver
+          # deploys is fixed-true on forge-contract — omitted from YAML.
+          type: forge-contract
+          description: "Deploy CrossChainResolver"
+          contract: "contracts/CrossChainResolver.sol:CrossChainResolver"
+          inputs:
+            - FACTORY_OLD_ADDRESS
+            - FACTORY_ADDRESS
+            - LOP_ADDRESS
+            - WETH_ADDRESS
+            - OWNER1_ADDRESS
+            - OWNER2_ADDRESS
+            - OWNER3_ADDRESS
+          outputs:
+            - CROSS_CHAIN_RESOLVER_IMPL_ADDRESS
+
+cross-chain-swap:
+  framework: foundry
+  repository:
+    uri: "https://github.com/1inch/cross-chain-swap.git"
+  generations:
+    v1:
+      releases:
+        v1.0.0:
+          tag: "v1.0.0"              # tag/commit pins — preferred for production
+          latest: true
+      actions:
+        escrow-factory:
+          type: forge-contract
+          description: "Deploy Escrow Factory (v1)"
+          contract: "contracts/EscrowFactory.sol:EscrowFactory"
+          # Deployment strategy comes from the workflow step's `method`
+          # (factory/salt from the plan `deploy` block) — not set here.
+          inputs:
+            - LOP_ADDRESS
+            - ACCESS_TOKEN_ADDRESS
+            - FACTORY_OWNER_ADDRESS
+            - CCEF_RESCUE_DELAY_SRC
+            - CCEF_RESCUE_DELAY_DST
+          outputs:
+            - ESCROW_FACTORY_ADDRESS
+
+        transfer-factory-ownership:
+          # forge-script uses the same uniform `command` field as other
+          # command-driven types. deploys: false — post-deploy script, not a
+          # deployment. requiresPrivateKey: true — the ownership tx must be signed.
+          type: forge-script
+          description: "Post-deploy: transfer EscrowFactory ownership to the multisig"
+          command: "scripts/TransferOwnership.s.sol:TransferOwnership"
+          deploys: false
+          requiresPrivateKey: true
+          # Idempotent: if rerunning a partially-failed workflow, skip when this
+          # step previously succeeded under the same deployment_id.
+          idempotent: true
+          inputs:
+            - ESCROW_FACTORY_ADDRESS
+            - NEW_OWNER_ADDRESS
+          outputs: []
+
+    v2:
+      # New generation: copy v1's actions, then edit to match the v2 interface.
+      # v1 and v2 definitions are independent — editing v2.escrow-factory later
+      # does not affect v1.escrow-factory.
+      # Here v2 added a fee-collector constructor argument.
+      # This generation carries THREE release pins — interchangeable code points
+      # behind the same v2 interface. The plan selects one (default: latest).
+      # Bumping to a new commit later means adding a pin, not touching workflows.
+      releases:
+        v2.0.0:
+          tag: "v2.0.0"
+        v2.1.0:
+          tag: "v2.1.0"
+          latest: true              # default pin when the plan selects none
+        jan-hotfix:
+          commit: "abc1234def5678abc1234def5678abc1234def56"
+      actions:
+        escrow-factory:
+          type: forge-contract
+          alias: ccs-escrow         # workflow step: `action: ccs-escrow` (not the full FQ id)
+          # alias must be unique across all actions; it lives in the workflow
+          # step's `action` field (separate from `workflow`), so it may share
+          # a name with a workflow id — no cross-file uniqueness rule.
+          description: "Deploy Escrow Factory (v2 — adds FEE_COLLECTOR_ADDRESS arg)"
+          contract: "contracts/EscrowFactory.sol:EscrowFactory"
+          inputs:
+            - LOP_ADDRESS
+            - ACCESS_TOKEN_ADDRESS
+            - FACTORY_OWNER_ADDRESS
+            - FEE_COLLECTOR_ADDRESS
+            - CCEF_RESCUE_DELAY_SRC
+            - CCEF_RESCUE_DELAY_DST
+            - FACTORY_TYPE_TAG
+          # Some inputs are fixed by the contract version itself — bake them in.
+          # Plan constants and workflow mappings cannot override inputConstants.
+          inputConstants:
+            FACTORY_TYPE_TAG: "escrow-v2"
+          outputs:
+            - ESCROW_FACTORY_ADDRESS
+
+        deploy-escrow-factory:
+          # v2-only make action — not present in the v1 generation.
+          type: make
+          description: "Deploy EscrowFactory contract via make"
+          deploys: true
+          # Deployment interface: the recipe writes the deployed address to
+          # .env.outputs, copies the ABI into $SYS_ARTIFACTS_DIR, and invokes
+          # the repo's verification target when SYS_VERIFY=1.
+          command: deploy-escrow-factory
+          verify: true
+          inputs:
+            - CREATE3_DEPLOYER_ADDRESS
+            - FACTORY_OWNER_ADDRESS
+            - LOP_ADDRESS
+            - ACCESS_TOKEN_ADDRESS
+            - FACTORY_SALT
+          outputs:
+            - ESCROW_FACTORY_ADDRESS
+
+        seed-escrow-state:
+          type: script
+          description: "Pre-deploy: seed EscrowFactory state via shell script"
+          deploys: false
+          requiresPrivateKey: true
+          # runtime omitted — engine spawns `bash <command>` (the default).
+          # The script both seeds the state and writes its outputs to
+          # .env.outputs — there is no separate collect command.
+          command: scripts/seed-escrow-state.sh
+          # Append a custom enricher that computes a derived seed value from
+          # inputs at runtime; engine defaults still run first.
+          enrichers:
+            - SeedDerivationEnricher
+          inputs:
+            - ESCROW_FACTORY_ADDRESS
+            - SEED_NONCE
+          outputs:
+            - SEED_HASH
+
+evm-helpers:
+  # Repo-level framework/packageManager are defaults for all generations.
+  # Hardhat 2 → 3 is carried by action type (hardhat2-contract vs
+  # hardhat3-contract / hardhat3-module), not by changing framework.
+  framework: hardhat
+  packageManager: yarn
+  repository:
+    uri: "https://github.com/1inch/evm-helpers.git"
+  generations:
+    cronos-2026:
+      # Generation ids are dot-free but otherwise unconstrained; release ids
+      # are fully unconstrained — pick names your team finds clear
+      # (here: date/context-meaningful).
+      releases:
+        cronos-2026.0:
+          commit: "4b1c8d2e9f7a6b5c4d3e2f1a0b9c8d7e6f5a4b3c"  # commit pin — recommended for production
+          latest: true
+      actions:
+        fee-collector-impl:
+          type: hardhat2-contract
+          description: "Deploy FeeCollector implementation"
+          contract: FeeCollector
+          inputs:
+            - WETH_ADDRESS
+            - LOP_ADDRESS
+            - FEE_COLLECTOR_OWNER_ADDRESS
+          outputs:
+            - FEE_COLLECTOR_IMPL_ADDRESS
+
+        read-fee-collector-owner:
+          # mode: call (default) — static eth_call, no tx, no private key.
+          # Performed by the engine in-process — no framework or toolchain involved.
+          # The address comes from the type's built-in parameter builtin.CALL_ADDRESS —
+          # wire it in the workflow, e.g.
+          # mappings: { builtin.CALL_ADDRESS: fee-collector-impl.FEE_COLLECTOR_IMPL_ADDRESS }
+          type: contract-call
+          description: "Read FeeCollector.owner() after deployment"
+          signature: "owner()(address)"   # return type drives decoding
+          inputs: []
+          outputs:
+            - FEE_COLLECTOR_OWNER_ACTUAL_ADDRESS
+
+        transfer-fee-collector-ownership:
+          # mode: send — signed transaction in-process with ${secret.privateKey}.
+          # Sends cannot produce outputs (a mined tx only yields a receipt).
+          # builtin.CALL_ADDRESS wired the same way as read-fee-collector-owner above.
+          type: contract-call
+          description: "Transfer FeeCollector ownership to the multisig"
+          signature: "transferOwnership(address)"
+          mode: send
+          inputs:
+            - NEW_OWNER_ADDRESS
+          outputs: []
+
+    cronos-2027:
+      # Newer codebase migrated to Hardhat 3 — deployments go through
+      # Ignition. framework stays `hardhat`; the action type carries
+      # the version distinction. New interface era → new generation.
+      releases:
+        hh3:
+          branch: hh3-migration
+          latest: true
+      actions:
+        deploy-fee-system:
+          # hardhat3-module: deploys the authored Ignition module as one
+          # unit. Inputs are passed BY NAME as module parameters; outputs
+          # are the module's returned contracts (one entry per return key).
+          # Deployment strategy still comes from the workflow step's
+          # `method` (mapped to Ignition strategies; create3 fails at run time).
+          type: hardhat3-module
+          description: "Deploy the FeeCollector system via Ignition"
+          module: ignition/modules/FeeSystem.ts
+          verify: true
+          inputs:
+            - weth          # m.getParameter("weth")
+            - lop           # m.getParameter("lop")
+            - owner         # m.getParameter("owner")
+          outputs:
+            # The module returns { feeCollector, feeRouter } — declared
+            # output names must equal the return-object keys.
+            - feeCollector
+            - feeRouter
+
+offchain-oracle:
+  # Demonstrates the extended `inputs` item shape: encoding transforms (the
+  # `transform` field, a scalar value coercion) and array-valued parameters
+  # (`array: true`, where the workflow assembles the list via a `combine`).
+  framework: hardhat
+  packageManager: yarn
+  repository:
+    uri: "https://github.com/1inch/offchain-oracle.git"
+  generations:
+    v1:
+      releases:
+        v1.0.0:
+          tag: "v1.0.0"
+          latest: true
+      actions:
+        oracle-registry:
+          type: forge-contract
+          description: "Deploy OracleRegistry (namespaced by a bytes32 salt)"
+          contract: "contracts/OracleRegistry.sol:OracleRegistry"
+          inputs:
+            # Encoding transform: the constructor wants a bytes32. The action
+            # declares the coercion once — a 0x+64hex value passes through
+            # verbatim, any other string is keccak256'd. This is the input's
+            # format contract; a workflow cannot disable it (it may only add
+            # adaptation transforms before it).
+            - { name: NAMESPACE, transform: salt }
+            - OWNER_ADDRESS
+          outputs:
+            - ORACLE_REGISTRY_ADDRESS
+
+        offchain-oracle:
+          type: hardhat2-contract
+          description: "Deploy OffchainOracle with array-valued constructor args"
+          contract: OffchainOracle
+          inputs:
+            - MULTI_WRAPPER_ADDRESS
+            # Array-valued inputs: the action declares only the arity. The
+            # workflow assembles each list from multiple sources via a
+            # `combine` (see examples/workflows.yml). `transform` is NOT
+            # allowed on an array input — per-element encoding lives in the
+            # workflow, per source.
+            - { name: ORACLES, array: true }       # address[]
+            - { name: FEED_IDS, array: true }      # bytes32[] (heterogeneous: some pre-hashed, some labels)
+            - { name: CONNECTORS, array: true }    # address[]
+            - OWNER_ADDRESS
+          outputs:
+            - OFFCHAIN_ORACLE_ADDRESS
+
+        deploy-oracle-set:
+          # Array-valued OUTPUT: the script deploys N oracles and reports
+          # them as one JSON-array value in .env.outputs
+          # (DEPLOYED_ORACLES=["0x..","0x.."]) — the mirror of the
+          # array-input serialization. Downstream steps consume the list
+          # whole (array: true input) or per element via a mapping pick /
+          # index ref (see examples/workflows.yml).
+          type: hardhat2-script
+          description: "Batch-deploy the standard oracle set"
+          command: scripts/deploy-oracle-set.ts
+          deploys: true
+          inputs:
+            - OWNER_ADDRESS
+          outputs:
+            - { name: DEPLOYED_ORACLES, array: true }
+
+# Dev-only: the single release pin omits branch/tag/commit — at prepare time
+# the engine resolves the remote default branch from origin/HEAD, checks it
+# out, pulls latest, and warns that the pin is not reproducible. Local dev /
+# track-HEAD only; prefer tag or commit for production.
+dev-sandbox:
+  framework: foundry
+  repository:
+    uri: "https://github.com/my-org/sandbox-contracts.git"
+  generations:
+    head:
+      releases:
+        head:                        # no branch/tag/commit → remote default (warns)
+          latest: true
+      actions:
+        smoke-deploy:
+          type: forge-contract
+          description: "Smoke deploy against remote default branch (local dev)"
+          contract: "contracts/Smoke.sol:Smoke"
+          inputs:
+            - OWNER_ADDRESS
+          outputs:
+            - SMOKE_ADDRESS

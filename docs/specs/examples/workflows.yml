@@ -1,0 +1,269 @@
+# yaml-language-server: $schema=../schemas/workflows.schema.yaml
+#
+# Worked workflows.yaml catalog. Deploys a CREATE3 factory, then composes a
+# couple of contracts that depend on it, then a top-level entry point that
+# nests the others. Notable behaviors are annotated inline below.
+
+version: 2
+
+# A leaf workflow — one action step, no mappings, no nesting.
+create3-deployer:
+  description: "Deploy the CREATE3 factory used by everything else."
+  steps:
+    - action: fusion-resolver.v1.create3-deployer
+
+# A nested workflow — reused by parents below.
+aggregation-executors:
+  description: "Deploy the simple and protected aggregation executors."
+  steps:
+    - action: aggregation-executors.v1.simple
+      id: simple
+      # CREATE3 for a deterministic address. The step only declares the
+      # method; its salt + factory live in the plan keyed by step id
+      # (deploy.salts.simple / deploy.factories.simple). Prefer an explicit
+      # per-step salt; a step with no salt falls back to deploy.saltBase
+      # (with a validation warning). Omit `method` entirely to default to CREATE.
+      method: create3
+    - action: aggregation-executors.v1.protected
+      id: protected
+      method: create3         # plan keys its salt under step id "protected"
+      # CREATE3 factory flavor: deploy through the canonical CreateX
+      # singleton — same address on every supported chain, so the plan needs
+      # NO deploy.factories entry for this step. The `simple` step above uses
+      # the default flavor (`oneInch`, the 1inch Create3Deployer), which reads
+      # its per-chain factory address from deploy.factories.simple.
+      factory: createx
+
+# A parent workflow — composes the leaf and the nested workflow above.
+aggregation-router-and-lo:
+  description: "ARv6 + LO + executors"
+  steps:
+    - action: aggregation-router.v1.router
+      # CREATE3; the per-step salt + factory come from the plan's deploy block
+      # (deploy.salts.router / deploy.factories.router), not wired here.
+      method: create3
+
+    - action: fee-collector.v1.fee-collector
+      id: fee-collector
+      mappings:
+        # Step output reference (value contains a dot): the address comes
+        # from the prior step's AGGREGATION_ROUTER_V6_ADDRESS output
+        # (id derived from the action = 'router').
+        LOP_ADDRESS: router.AGGREGATION_ROUTER_V6_ADDRESS
+
+    - workflow: aggregation-executors                # nested workflow
+      mappings:
+        # Parent mapping on a nested-workflow step: wires an executor input
+        # (exposed under this external name) to a prior sibling step's output.
+        LEFTOVER_EXCHANGER_ADDRESS: fee-collector.FEE_COLLECTOR_ADDRESS
+
+# A top-level workflow composing everything via nesting and parent-level mappings.
+# Demonstrates per-step PK rename: two escrow-factory steps with distinct
+# secret slots (privateKey1, privateKey2), wired in the plan.
+full-deploy:
+  description: "Top-level deploy entry point."
+  steps:
+    - action: fusion-resolver.v1.create3-deployer
+      mappings:
+        # Secret rename: this step reads chains.<c>.secrets.privateKey1
+        # instead of the default chains.<c>.secrets.privateKey. The
+        # plan wires privateKey1 to the desired vault entry
+        # (e.g. ${vault.create3Deployer}).
+        privateKey: privateKey1
+
+    - action: cross-chain-swap.v1.escrow-factory
+      id: escrow-factory-2
+      mappings:
+        # A second per-step PK slot — independent from privateKey1.
+        privateKey: privateKey2
+
+    - workflow: aggregation-router-and-lo
+      mappings:
+        # Parent-level mappings are folded into the nested action steps
+        # when the engine flattens the workflow.
+        KYC_TOKEN_OWNER_ADDRESS: KYC_TOKEN_OWNER_ADDRESS_FEETAKER
+        KYC_TOKEN_SALT: KYC_TOKEN_SALT_FEETAKER
+
+# Method variants — deploy-strategy re-skins of an existing workflow. Same
+# steps, same data wiring; only per-step methods (`methods`), CREATE3
+# factory flavors (`factories`), and signing-key slots (`keys`) change. The
+# plan points its `workflow` field at the variant id and can never change
+# methods or flavors itself.
+
+# Per-environment clamp: run the whole stack with plain CREATE (e.g. staging).
+full-deploy-plain:
+  variantOf: full-deploy
+  methods:
+    "*": create              # wildcard: every contract/module step
+  keys:
+    # A method flip can demand a different wallet: with plain CREATE the
+    # address derives from (deployer, nonce), so this step now signs with a
+    # dedicated same-nonce slot. The value is a NAME — the variant's plan
+    # must define secrets.sameNonceDeployer (per chain or in defaults).
+    # No "*" wildcard for keys: to re-key the whole variant, bind the
+    # default `privateKey` slot in the variant's plan instead.
+    escrow-factory-2: sameNonceDeployer
+
+# Per-chain overrides: keep the base methods everywhere except zksync, which
+# lacks the canonical CREATE3 factory. Dotted step ids reach into nested
+# workflows (ids as they appear after flattening).
+full-deploy-zk-safe:
+  variantOf: full-deploy
+  chains:
+    zksync:
+      methods:
+        "*": create
+      keys:
+        escrow-factory-2: zkDeployer   # per-chain slot override, same shape
+  methods:
+    # Chain-agnostic per-step override; per-chain keys win over these,
+    # per-step keys win over "*" within each scope. Steps not mentioned
+    # keep the method declared on the base workflow's steps.
+    aggregation-router-and-lo.aggregation-executors.protected: create2
+
+# Production-pipeline mappings: per-source `transform` (encoding), `combine`
+# (structural), and `pick` / index refs (split — extract one element of an
+# array output). Uses the offchain-oracle actions from examples/actions.yml
+# (the final proxy action is illustrative — not part of that catalog).
+offchain-oracle-stack:
+  description: "Array-valued constructor args + a proxy initData via abiEncode."
+  steps:
+    - action: offchain-oracle.v1.oracle-registry
+      id: oracle-registry
+      mappings:
+        # The action declares NAMESPACE `transform: salt` — authoritative,
+        # applied last, not overridable here. The workflow only names the
+        # source constant (a human label); the salt coercion makes it bytes32.
+        NAMESPACE: REGISTRY_NAMESPACE_LABEL
+
+    # Batch step with an `array: true` output: reports
+    # DEPLOYED_ORACLES=["0x..","0x..",...] in .env.outputs.
+    - action: offchain-oracle.v1.deploy-oracle-set
+      id: oracle-set
+
+    - action: offchain-oracle.v1.offchain-oracle
+      id: offchain-oracle
+      mappings:
+        # MULTI_WRAPPER_ADDRESS has no mapping — an unmapped input reads the
+        # plan constant of the same name.
+
+        # (split) Index sugar — extract one element of the array output into
+        # a scalar input. Sugar for { from: oracle-set.DEPLOYED_ORACLES, pick: 0 }.
+        PRIMARY_ORACLE: oracle-set.DEPLOYED_ORACLES[0]
+
+        # (split) Object form — required when chaining an encoding transform
+        # after the pick (extract element 1, then hash it).
+        FALLBACK_ORACLE_SALT:
+          from: oracle-set.DEPLOYED_ORACLES
+          pick: 1
+          transform: [keccak256]
+
+        # (a) List sugar — assemble an address[] from constants. Equivalent to
+        # { from: [...], combine: array }. No per-element transform needed.
+        CONNECTORS: [WETH_ADDRESS, USDC_ADDRESS, DAI_ADDRESS]
+
+        # Explicit object form (same as the sugar) mixing indexed step outputs
+        # and a constant rename — all addresses, passed through as-is.
+        ORACLES:
+          from:
+            - oracle-set.DEPLOYED_ORACLES[0]      # step output, picked element
+            - oracle-set.DEPLOYED_ORACLES[1]      # step output, picked element
+            - EXTRA_ORACLE_ADDRESS                # constant rename
+          combine: array
+
+        # (b) Heterogeneous combine: array into a bytes32[] — some elements are
+        # already-hashed 0x values (passed through), others are hashed
+        # per-source with keccak256. Per-source transforms are independent.
+        FEED_IDS:
+          from:
+            - ETH_USD_FEED_ID                          # 0x..64hex constant, as-is
+            - { from: BTC_USD_LABEL, transform: [keccak256] }  # label -> bytes32
+            - { from: oracle-registry.ORACLE_REGISTRY_ADDRESS, transform: [keccak256] }  # step output -> bytes32
+          combine: array
+
+        OWNER_ADDRESS: PROTOCOL_OWNER_ADDRESS
+
+    # (c) Proxy initData: per-source encoding (keccak256 one arg) then a
+    # structural combine that produces calldata (4-byte selector + abi.encode).
+    # The signature is required — values are untyped strings and the proxy's
+    # `bytes` arg is opaque, so the types/selector must be given here.
+    - action: my-proxy.v1.transparent-proxy
+      id: proxy
+      mappings:
+        IMPLEMENTATION: offchain-oracle.OFFCHAIN_ORACLE_ADDRESS
+        PROXY_INIT_DATA:
+          from:
+            - OWNER_ADDRESS                                       # address, as-is
+            - { from: NAMESPACE_LABEL, transform: [keccak256] }  # -> bytes32
+          combine: abiEncodeWithSignature("initialize(address,bytes32)")
+
+# Built-in parameter wiring: contract-call steps get their target address
+# through the type's built-in parameter `builtin.CALL_ADDRESS` — an
+# engine-declared key (never in the action's `inputs`) that maps like any
+# ordinary input. Uses the fee-collector actions from examples/actions.yml.
+fee-collector-handover:
+  description: "Deploy FeeCollector, hand ownership to the multisig, verify."
+  steps:
+    - action: evm-helpers.cronos-2026.fee-collector-impl
+      id: fee-collector-impl
+
+    - action: evm-helpers.cronos-2026.transfer-fee-collector-ownership
+      id: hand-over
+      mappings:
+        # Built-in parameter, step output ref (the typical wiring): call the
+        # contract the previous step just deployed.
+        builtin.CALL_ADDRESS: fee-collector-impl.FEE_COLLECTOR_IMPL_ADDRESS
+        NEW_OWNER_ADDRESS: MULTISIG_ADDRESS        # ordinary input rename
+
+    - action: evm-helpers.cronos-2026.read-fee-collector-owner
+      id: verify-owner
+      mappings:
+        # Same built-in on a second contract-call step — each step wires its
+        # own target independently. A bare rename (no dot) would read a plan
+        # constant instead: `builtin.CALL_ADDRESS: FEE_COLLECTOR_ADDRESS_OLD`.
+        # With no mapping at all, the step reads the shared plan constant
+        # under the literal key `builtin.CALL_ADDRESS`.
+        builtin.CALL_ADDRESS: fee-collector-impl.FEE_COLLECTOR_IMPL_ADDRESS
+
+# Things to notice:
+#
+# - `aggregation-executors` is two action steps, each with `method:
+#   create3`. Their salts + factories live in the plan keyed by step id
+#   (`deploy.salts.simple`, `deploy.factories.simple`, etc.) — prefer explicit
+#   per-step salts (brute-forced vanity 0x values, identical across chains); a
+#   step with no salt falls back to `deploy.saltBase` with a validation warning.
+#   The deployment method is part of the workflow definition, not a plan
+#   constant or mapping — the plan cannot change it.
+# - The two create3 steps also show the factory flavors: `simple` uses the
+#   default `oneInch` (1inch Create3Deployer — ownership-protected, factory
+#   address from the plan), `protected` uses `createx` (canonical CreateX
+#   singleton — salt-protected, no factory entry). See workflows.md →
+#   CREATE3 factory flavors.
+# - `full-deploy-plain` / `full-deploy-zk-safe` are method variants: first-class
+#   workflow ids (a plan's `workflow` field points at them; results are keyed by
+#   them) that resolve to the base workflow's exact steps with only the deploy
+#   strategy overridden — per-step methods, CREATE3 factory flavors, and
+#   signing-key slots. Overriding anything else (data mappings, steps) is not
+#   a variant — that's a different workflow.
+# - `full-deploy`'s first two steps demonstrate the rename mechanism for secrets:
+#   each step renames `privateKey` to a distinct slot (`privateKey1`,
+#   `privateKey2`). The plan must declare both slots under `secrets:` per chain
+#   (or in the preset's `defaults.secrets`) — typically as `${vault.X}` refs — and the engine
+#   errors otherwise. See plans.md → Multi-PK via named secrets.
+# - `full-deploy` includes `aggregation-router-and-lo` and supplies parent-level
+#   mappings (`KYC_TOKEN_OWNER_ADDRESS`, `KYC_TOKEN_SALT`) — renames that
+#   re-route inner constant lookups to differently-named outer constants.
+#   (Deployment strategy needs no parent mapping: each inner step carries its own
+#   `method`, and the plan supplies the per-step salt/factory data keyed
+#   by the flattened step id.)
+# - `offchain-oracle-stack` demonstrates the split axis: `oracle-set` declares
+#   an `array: true` output, and the consuming step extracts elements with the
+#   `[i]` index sugar or the object-form `pick` (composable with per-source
+#   `transform`). An array output can also feed an `array: true` input whole —
+#   no pick needed then.
+# - `fee-collector-handover` demonstrates built-in parameter wiring: the
+#   contract-call type declares `builtin.CALL_ADDRESS` (required), and each
+#   step maps it like an ordinary input — step output ref, bare rename, or
+#   (unmapped) the shared plan constant under the literal `builtin.CALL_ADDRESS`
+#   key. Mapping a `builtin.` key on a type that doesn't declare it is a
+#   validation error. See references.md → Built-in command parameters.

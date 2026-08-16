@@ -1,0 +1,105 @@
+# yaml-language-server: $schema=../schemas/plans.schema.yaml
+#
+# Worked plan with two presets (`staging` and `prod`), demonstrating a
+# chain-set reference ($set) with a member override and additions, chain
+# references with profile selectors (rpc / verifiers), global refs,
+# vault-backed secrets, and preset-driven chain filtering. The `${vault.X}`
+# entries are looked up against the `vault:` block in global-params.yaml.
+# Notable behaviors are annotated inline below.
+#
+# Deploy METHODS are not in this file — the plan cannot change them. They are
+# resolved entirely in workflows.yaml; this plan points at `resolver-zk-safe`,
+# a method variant of `cross-chain-resolver-pure` that clamps every contract
+# step to plain CREATE on zksync (see workflows.md -> Method variants). The
+# plan supplies only the salt/factory data.
+
+version: 2                               # config format version — engine errors on mismatch
+                                         #   (override with --ignore-version)
+
+workflow: resolver-zk-safe
+
+# No deployment_id field: deployment identity is resolved at run time —
+# CLI --deployment-id, else the selected preset's name (here: `prod`).
+# An unfinished `prod` deployment is resumed automatically (unless
+# --restart); once complete, the next launch runs as `prod-2`.
+# See plans.md -> Deployment id & re-runs.
+
+# Optional: pin the generation to a specific release for this launch.
+# Omit a generation to use its `latest` pin.
+releases:
+  cross-chain-resolver.v1: v1.0.0
+
+# Chain references into known-chains.yaml — a chain-set reference plus
+# explicit entries (names + profile selectors only). No connection values
+# here: chain ids, RPC URLs, verification endpoints and keys all live in
+# known-chains; changing them never touches this plan.
+chains:
+  $set: evm-prod                         # expands to mainnet / base / matic with the set's
+                                         #   selectors (mainnet: private RPC + dual verification)
+  matic:
+    verifiers: false                     # member override — explicit entry wins by chain name
+  sepolia: {}                            # addition beyond the set: default RPC + default verification
+  zksync:
+    verifiers: false                     # addition with a selector: verification disabled
+
+presets:
+  staging:
+    type: staging
+    defaults:
+      constants:
+        OWNER1_ADDRESS: "0x924465cf8cfc56b56539a5c59f2a85bfd64adb93"
+        OWNER2_ADDRESS: "0x3eb5ba7f608609cdc9375c8f8f93861af0b69b1b"
+        OWNER3_ADDRESS: "0x9d56e8efd23dc2e554766842fff09d7c50e0b258"
+        LOP_ADDRESS: "${global.LOP_V4}"
+        WETH_ADDRESS: "${global.WETH}"
+        DEPLOY_TAG: "${system.CHAIN_NAME}-${system.DEPLOYMENT_ID}"
+      # No deploy block: methods come from the workflow, and on sepolia the
+      # base methods apply as-is. Salts always resolve (saltBase/random
+      # fallbacks with warnings); a fully plain-CREATE staging run would
+      # instead be a separate plan pointing at a `-plain` method variant.
+      secrets:
+        privateKey: "${vault.privateKey}"  # vault entry resolves to ${env.PK_REGULAR_DEPLOYER}
+    chains:
+      sepolia:
+        constants: {}                      # only sepolia is kept under 'staging'
+
+  prod:
+    type: production
+    defaults:
+      constants:
+        OWNER1_ADDRESS: "0x924465cf8cfc56b56539a5c59f2a85bfd64adb93"
+        OWNER2_ADDRESS: "0x3eb5ba7f608609cdc9375c8f8f93861af0b69b1b"
+        OWNER3_ADDRESS: "0x9d56e8efd23dc2e554766842fff09d7c50e0b258"
+        LOP_ADDRESS: "${global.LOP_V4}"
+        WETH_ADDRESS: "${global.WETH}"
+        # Fixed array as a JSON-array STRING — parsed into a list for an
+        # `array: true` input. (For lists built from step outputs or needing
+        # per-element transforms, use a workflow `combine` instead.)
+        CONNECTORS: '["0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2", "0xA0b86991c6218b36c1d19D4a2e9Eb0cE3606eB48"]'
+      deploy:
+        # The plan supplies only the DATA the workflow-resolved methods need.
+        salts:
+          resolver-impl: "1inch Crosschain Resolver v1.0.0"   # non-0x -> keccak256(string)
+          resolver-proxy: "0x9c1e...a04b"                      # 0x -> bytes verbatim (vanity)
+        factories:
+          resolver-impl: "${global.FACTORY_A}"
+          resolver-proxy: "${global.FACTORY_A}"
+      secrets:
+        privateKey: "${vault.sameNonceDeployer}"   # vault → ${env.PK_SAMENONCE}
+    chains:
+      mainnet:
+        constants: {}
+      zksync:
+        constants:
+          # Per-chain override under 'prod' only. Other chains see no value here.
+          FACTORY_OLD_ADDRESS: "0x584aEaB186D81dbB52a8a14820c573480c3d4773"
+        deploy:
+          # The zksync CREATE clamp lives in the `resolver-zk-safe` variant
+          # (workflows.yaml), not here. This per-chain factory override merges
+          # by step-id key over the preset's defaults.deploy.factories —
+          # unused while the variant clamps zksync to create, but correct for
+          # any create3 variant.
+          factories:
+            resolver-impl: "${global.FACTORY_A_ZKSYNC}"
+
+default_preset: prod                       # used when the CLI passes no --preset

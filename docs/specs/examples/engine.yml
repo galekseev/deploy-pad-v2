@@ -1,0 +1,46 @@
+# yaml-language-server: $schema=../schemas/engine.schema.yaml
+#
+# Worked engine config (engine.yaml) — the engine's own run-behavior
+# settings; the preflight-checks block is its first tenant. The file is
+# OPTIONAL: when none is mounted, the engine's shipped default applies
+# (the three engine:* checks, with balance as warn). A mounted file
+# REPLACES that default wholesale — keeping a shipped check means
+# carrying its entry, as this file does. Notable behaviors are annotated
+# inline below.
+
+version: 2
+
+preflight:
+  checks:
+    # Kept from the shipped default — replacement is wholesale, so every
+    # shipped check to keep is carried here (the script itself stays in
+    # the engine release; this is one line per check).
+    rpc:
+      script: engine:rpc               # reachability + chain identity (one eth_chainId call);
+                                       #   exact facts -> hard failure (severity defaults to error)
+    create3-factory:
+      script: engine:create3-factory   # functional probe of every create3 step's factory;
+                                       #   prints the predicted deployment addresses
+    balance:
+      script: engine:balance
+      severity: error                  # promoted from the default's warn — the run-estimated
+                                       #   requirement proved out in this environment
+      params:                          # free-form, passed to the script verbatim (no ${...})
+        gasPerDeployment: 5000000      # heuristic override: heavier contracts here
+        minimums:
+          matic: "25"                  # per-chain floor in native units — the escape hatch
+
+    # Operator-written check from the config mount. Checks run before any
+    # repository exists, so scripts live under --configs-dir — never in
+    # cloned repos.
+    release-backend-live:
+      script: "preflight/check-backend.ts"
+      scope: run                       # run-scope checks execute first, once per invocation
+      severity: warn                   # informative while the check earns trust
+
+    # Disabled without removal — the check does not run but is reported
+    # as `disabled` in the preflight report and the run attempt record,
+    # so the opt-out stays visible.
+    dns-sanity:
+      script: "preflight/check-dns.ts"
+      enabled: false
