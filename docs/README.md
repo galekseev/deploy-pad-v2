@@ -10,6 +10,7 @@ Working design artifact for the next version of deploy-pad. Each file describes 
 
 - **[specs/](specs/)** — the config and interface specifications: one doc per config file, plus the cross-cutting specs (references, naming, secrets, CLI) and the per-step engine deep-dive. Companion [schemas/](specs/schemas/) and [examples/](specs/examples/) live alongside them.
 - **[architecture/](architecture/)** — how the engine works end to end, above the level of any single config: the [arc42 architecture document](architecture/arc42.md) (the umbrella view, with the C4 diagrams inline), the run lifecycle, and one design doc per phase.
+- **[implementation/](implementation/)** — the code-level layer: the field-level contracts between run phases, the stack decisions, the delivery order, and the test strategy. Written for engineers building the engine, and deliberately separate from `architecture/`, which stays free of type definitions and code (OC-4). Downstream of everything above it: **where an implementation doc and a spec disagree, the spec wins.**
 - Root — this index, [requirements.md](requirements.md) (the numbered business-requirements document derived from this design set), and [TODO.md](TODO.md) (raw ideas scratchpad).
 
 ## Files
@@ -42,6 +43,10 @@ Working design artifact for the next version of deploy-pad. Each file describes 
 | [specs/engine-internals.md](specs/engine-internals.md) | How the engine processes an action (lifecycle, enrichers, writers) — not part of any config, useful for understanding what runs |
 | [specs/design-decisions.md](specs/design-decisions.md) | The single home for cross-cutting v2 design decisions and their rationale (terminology, substitution model, value transforms, open questions) — a design record, no schema |
 | [requirements.md](requirements.md) | The numbered business-requirements document (BRD) **derived from** this design set — narrative context plus traceable `FR-*` / `NFR-*` requirements. Downstream of the specs: when it and a spec disagree, the spec wins and the BRD needs regenerating |
+| [implementation/artifacts.md](implementation/artifacts.md) | The **field-level contracts between run phases** — run context, resolved plan, execution plan, deployment decision, preflight clearance, prepared checkouts, per-chain outcomes — plus the cross-cutting types (tagged secret values, diagnostics, exit codes). Normative until the TypeScript types exist, its readable index afterwards |
+| [implementation/stack.md](implementation/stack.md) | The **code-level decisions**: Node baseline and native TypeScript execution, compiler settings, package manager, repository layout, the schemas package as a cross-repo contract, dependency choices, logging and redaction, build and release |
+| [implementation/delivery-plan.md](implementation/delivery-plan.md) | The **build order** — ten vertical slices with acceptance criteria in requirement ids, what gets lifted from v1, and what is deliberately deferred. Not the same as the run's phase order, and the doc explains why |
+| [implementation/test-strategy.md](implementation/test-strategy.md) | The **test levels and their boundaries**, the requirement-to-test traceability check, fixtures, and the guarantees that always get a test (no secret in any output, no credential trace from repo auth, no secret in a preflight context) |
 
 Companion schemas and examples live in [specs/schemas/](specs/schemas/) and [specs/examples/](specs/examples/) — one `.schema.yaml` plus one worked `examples/*.yml` per config file (`actions`, `workflows`, `plans` — two examples, a workflow plan and a single-action plan — `known-chains`, `global-params`, `multisig`, `engine`). The cross-cutting specs, `results.md` (engine-written output), and the architecture docs have neither.
 
@@ -73,7 +78,9 @@ Every YAML config and example in these docs carries a header comment so the [Red
 # yaml-language-server: $schema=../schemas/<name>.schema.yaml
 ```
 
-The path is relative to the YAML file. Example file paths in this docs folder use `../schemas/...`; live workspace configs would use a path resolving to the published schema location.
+The path is relative to **the YAML file itself**, not to the project root — so the same schema is a different path from `configs/actions.yaml` than from `configs/plans/my-plan.yaml`. Example files in this docs folder use `../schemas/...`, which stays short because they sit one level below the schemas.
+
+For **live workspace configs** the published schema location is the `@deploy-pad/schemas` package, and the recommended wiring is not a per-file modeline but a `yaml.schemas` glob mapping in the workspace's editor settings: one place to point at the schemas, and config files that carry no path at all. A modeline still wins where it appears, which makes it the per-file override. Where the package is installed, the schemas resolve under `node_modules/@deploy-pad/schemas/`; where it is not, a modeline can point at the published JSON over a CDN, pinning the major version so that the schema behind the URL cannot change config format underneath the file. See [implementation/stack.md → The schemas package](implementation/stack.md#6-the-schemas-package).
 
 ### Substitution references
 

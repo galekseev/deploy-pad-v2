@@ -135,7 +135,7 @@ The estimate is `(deploySteps × gasPerDeployment + otherSteps × gasPerCall) ×
 | [references.md](references.md) | **No `${...}` substitution applies in this file** — `params` values reach check scripts verbatim; the engine never interprets them. See the [scoping matrix](references.md#scoping). |
 | [known-chains.md](known-chains.md) | The RPC profiles (URL, headers) the check context exposes per chain, and the `chain_id` the shipped RPC check compares against. |
 | [secrets.md](secrets.md) | Why checks see no secrets: the context serializes untagged values only, and the sender block carries an address, never a key. |
-| [engine-internals.md](engine-internals.md) | The config version check mechanics; the TypeScript runtime (`tsx`) that executes check scripts. |
+| [engine-internals.md](engine-internals.md) | The config version check mechanics; the `SYS_*` naming convention the check environment mirrors. Check scripts run on Node's own TypeScript execution (`node <check>.ts`), which limits them to erasable syntax — see [phase 5 → The execution contract](../architecture/phase-5-preflight.md#the-check-mechanism--one-kind-no-special-cases). |
 
 ## Validation rules & common errors
 

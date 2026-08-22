@@ -691,12 +691,12 @@ Identical to [`hardhat2-script` fields](#hardhat2-script-fields) — a single re
 **Runtime details.** Each runtime is a distinct binary the engine spawns. The author is responsible for ensuring the chosen runtime is installed in the execution environment.
 
 
-| `runtime` | Spawn shape         | Typical file extension | Availability                                                        |
-| --------- | ------------------- | ---------------------- | ------------------------------------------------------------------- |
-| `bash`    | `bash <command>`    | `.sh` (any)            | Universal on POSIX systems; Windows requires WSL or Git Bash.       |
-| `node`    | `node <command>`    | `.js`, `.mjs`, `.cjs`  | Shipped with the Node.js the engine itself runs on.                 |
-| `tsx`     | `tsx <command>`     | `.ts`, `.tsx`          | Requires `tsx` on `PATH` — typically installed as a dev dependency. |
-| `ts-node` | `ts-node <command>` | `.ts`                  | Requires `ts-node` on `PATH`.                                       |
+| `runtime` | Spawn shape         | Typical file extension              | Availability                                                                                                                                                                                                    |
+| --------- | ------------------- | ----------------------------------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `bash`    | `bash <command>`    | `.sh` (any)                         | Universal on POSIX systems; Windows requires WSL or Git Bash.                                                                                                                                                   |
+| `node`    | `node <command>`    | `.js`, `.mjs`, `.cjs`, `.ts`, `.mts` | Shipped with the Node.js the engine itself runs on — **including TypeScript**: on the engine's Node baseline, `node` runs a `.ts` file directly by stripping its types. No build step, but **erasable syntax only** — no `enum`, no `namespace` with runtime code, no parameter properties, no `import =`. The preferred runtime for TypeScript scripts. |
+| `tsx`     | `tsx <command>`     | `.ts`, `.tsx`                       | Requires `tsx` on `PATH` — typically installed as a dev dependency. The escape hatch for TypeScript `node` cannot strip: non-erasable syntax, or JSX.                                                          |
+| `ts-node` | `ts-node <command>` | `.ts`                               | Requires `ts-node` on `PATH`. Same escape-hatch role as `tsx`.                                                                                                                                                  |
 
 
 The engine does not validate that `command`'s file extension matches `runtime` — `runtime: bash` with `command: scripts/foo` (no extension) is allowed, as is any other combination. The runtime field is purely about which interpreter the engine spawns.
