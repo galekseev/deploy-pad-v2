@@ -40,7 +40,7 @@ The schemas also physically move in this slice: `docs/specs/schemas/*.schema.yam
 
 **Not in scope.** Any config reading whatsoever.
 
-**What it claims.** FR-CLI-003, FR-CLI-004, FR-CLI-005 and NFR-003, per [slices.yaml](../../test/traceability/slices.yaml) — four of the catalog's 254, which is the honest starting number.
+**What it claims.** FR-CLI-003, FR-CLI-004, FR-CLI-005 and NFR-003, per [slices.yaml](../../test/traceability/slices.yaml) — four of the catalog's 256, which is the honest starting number.
 
 **What it left for its neighbours.** Written down here rather than left in a branch:
 

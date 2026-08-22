@@ -24,6 +24,8 @@ The single home for cross-cutting v2 design decisions — **what was decided and
 - [`${random.N}`: test-only, no determinism](#randomn-test-only-no-determinism) ✅
 - [Config format versioning: every file](#config-format-versioning-every-file) ✅
 - [Vault redaction: show the reference, never the secret](#vault-redaction-show-the-reference-never-the-secret) ✅
+- [Results persistence in CI: commit the tree back](#results-persistence-in-ci-commit-the-tree-back) ✅
+- [The CLI is an adapter, not the engine](#the-cli-is-an-adapter-not-the-engine) ✅
 - [Pluggable step components: collectors and verifiers](#pluggable-step-components-collectors-and-verifiers) ✅
 - [Format migration](#format-migration) 🔭
 - [Rejected namespace candidates](#rejected-namespace-candidates) ✅
@@ -404,6 +406,36 @@ These fall out of the decisions above and are enforced at load / input-resolutio
 - The **single-token rules are unchanged** where the whole value *is* the credential: plan `secrets:` values, `verification.<p>.api_key`, `repository.auth`, multisig `proposer` / `executor`. There, the label display and the old redaction coincide.
 
 **Why.** Label substitution keeps operational output readable — *which* endpoint, *which* header, *which* vault role fed a value — while guaranteeing the secret bytes never surface; it is the same debugging affordance the redaction labels always carried, generalized from whole values to fragments. Wholesale redaction could not extend to URLs without destroying their readability, and leaving URL-embedded keys unredacted (the previous state) was the last secret-flow gap in the config surface.
+
+## Results persistence in CI: commit the tree back
+
+**Decision.** The **results tree is committed back to the repository that carries the configs**, after every invocation, whatever its exit code — the recommended pattern for running unattended on an ephemeral runner. The engine is unchanged by this: it performs **no git operations on the workspace repository** (there is no `--commit-results` flag, and no credential is handed to it for that purpose), because persistence is workflow mechanics, not run behavior. What the engine owes the pattern instead is a **portable tree** — every path relative to `--results-dir`, no hostname or absolute path in any record — so that a deployment resumes from a fresh checkout on a different machine exactly as it would on the machine that started it. Normative spec: [ci.md](ci.md); the record-side properties are in [results.md → Designed for version control](results.md#designed-for-version-control).
+
+**Why.** The resume model is entirely file-based by design ([Resume freeze](#resume-freeze-frozen-parameters-fingerprinted-structure)): retrying incomplete work, replaying idempotent steps, and polling a Safe proposal all read the tree the previous invocation wrote. A hosted runner starts from a clean disk, so without persistence every invocation looks like a fresh deployment — the failure is silent and expensive (a re-deploy instead of a resume; a second batch proposed while owners are still signing the first). Committing to git is then the option that costs nothing and *adds* something: the records are secret-free by construction and append-mostly immutable, so git holds them safely and conflict-free, and deployment history lands in the same reviewable diffs as the configs that produced it — the [config reviewability](../requirements.md) principle extended to the engine's output.
+
+**Rejected.**
+
+- *Build artifacts* (`upload-artifact` / `download-artifact`) — retention is capped while a multisig deployment can legitimately wait longer, and artifacts are scoped per workflow run, so "the latest state of this deployment" is not a thing you can check out. Kept for the `run.json` log, which is genuinely per-invocation.
+- *`actions/cache`* — best-effort and evictable. Silently losing deployment state is the one failure mode this must not have. Right for `--repos-dir`, which is disposable by design ([phase 6](../architecture/phase-6-repo-prepare.md)).
+- *External object storage* — works, and is the honest answer at organization scale, but it costs infrastructure plus a credential and moves the records out of the reviewable-git world. Documented as an option, not the default.
+- *Engine-side persistence* (the engine commits and pushes its own results) — would hand the engine write access to the repository it was invoked from, add a git-remote failure mode to the end of every run, and duplicate what one workflow step already does well. The engine clones the *deploy* repositories it was told about; it does not touch the one its configs came from.
+
+**Consequences.** `workspace/results/` is tracked and `workspace/repos/` is not. A workflow needs `contents: write` for its own repository (which the automatic workflow token grants — unrelated to the broader credential needed for cloning deploy repos), a `concurrency:` group so two invocations of one deployment cannot overlap, and a commit step that runs on failure and on the waiting state, not only on success. The portability obligation becomes a stated requirement (NFR-043) rather than an accident of the current implementation.
+
+## The CLI is an adapter, not the engine
+
+**Decision.** The CLI is the only interface the project **ships**, but it is not where behavior lives: it is a thin adapter that parses argv into the run context and hands it to the pipeline. Everything a command does is invocable **in-process**, with no dependency on argv, `process.exit`, or the console. Two seams follow from the existing phase boundaries, and both are stated as producer-agnostic:
+
+- **The run context** ([phase 1](../architecture/phase-1-invocation.md)) — the invocation parameters. The CLI parser produces one today; a future SDK would construct one directly and enter at phase 2.
+- **The config source** ([phase 2](../architecture/phase-2-load-validation.md)) — the raw config object graph (actions, workflows, plans, chains, and friends). The YAML loader over the mounted directory produces one today; a programmatic producer would build the same shapes, for which the `@deploy-pad/schemas` generated types are already the contract.
+
+Two invariants keep the seams honest. **Validation is source-agnostic**: constructing configs programmatically replaces *parsing*, never the gates — schema, referential and value-resolution checks run identically whatever produced the graph, and diagnostics already model a fileless location. And **post-validation artifacts are never inputs**: nobody hands the engine a resolved plan or an execution plan, because that would bypass the gates and freeze internal artifacts into a public API. The mount-is-the-allowlist rule generalizes accordingly — the *config source* is the allowlist; for the directory source that is the mount, and for a programmatic source the embedding application owns it.
+
+**Status.** The layering is decided and constrains the code now (NFR-060). The **published SDK surface is deferred** — exported entry points, semver commitments, progress events, typed results, and the resume story for non-file config sources are open (OI-17), and the visual editor remains out of scope. Until then the boundary is internal: real, tested, and not yet a promise to anyone outside the repository.
+
+**Why.** Both future consumers — a UI that launches deployments and the visual editor that authors configs — need the engine's rules rather than its command line, and the alternative to a boundary is reimplementation, which is exactly the engine-versus-editor divergence the shared config contract exists to prevent. Deciding the *layering* now is nearly free because the phase model already provides it (each phase is a contract with a named input artifact); deciding the *published API* now is not, since an API with one caller is a guess about the second. Keeping validation on the far side of the seam is what makes the offer safe: a UI-built run fails the same way, with the same diagnostics, as a file-built one, so `validate` stays meaningful for both.
+
+**Consequences.** The command-line layer holds argv parsing, output rendering and the exit code, and nothing else; a phase that wants to stop the run returns rather than exits. The generated raw-config types in `@deploy-pad/schemas` acquire a second job as the future builder contract, and because the schemas major equals the config format version, a programmatic builder's format compatibility is expressed by its dependency range — the version gate becomes a compile-time property for configs that were never parsed. Auditability is unaffected: a programmatically launched deployment records the same resolved values and is exactly as resumable, since the records freeze the *resolved* state rather than its source.
 
 ## Pluggable step components: collectors and verifiers
 

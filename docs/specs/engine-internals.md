@@ -469,9 +469,11 @@ With `vault.gitHubToken: "${env.GH_DEPLOY_TOKEN}"` in global-params, every repo 
 
 Token choice matters:
 
-- **`${{ secrets.GITHUB_TOKEN }}`** (the automatic workflow token) can only read the workflow's *own* repository — almost never sufficient, since deploy-pad's whole model is cloning *other* repos.
+- **`${{ secrets.GITHUB_TOKEN }}`** (the automatic workflow token) can only read the workflow's *own* repository — almost never sufficient, since deploy-pad's whole model is cloning *other* repos. (It *is* enough to push the results tree back to the workflow's own repository, which is a different job — see below.)
 - **Fine-grained PAT** scoped to Contents: read on the specific deploy repos works, but is bound to a person and expires.
 - **GitHub App installation token** is the recommended org-level setup: short-lived, repo-scoped, not tied to an individual. A pre-step mints it (e.g. `actions/create-github-app-token`) and exports it as the env var.
+
+Everything else about unattended operation — the console/log-file shape, the exit-code contract, and keeping the results tree alive between invocations on an ephemeral runner — is owned by [ci.md](ci.md). This section covers only the repository credential.
 
 ## Idempotency lookup
 

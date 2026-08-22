@@ -86,6 +86,19 @@ Three properties define it:
 2. **Its fields split into requests and facts.** A *fact* is final at parse time and never re-validated: chain mode, console log level and log-file path, directory roots, `--ignore-version`, `--skip-verify`. A *request* names something in a file that is not loaded yet and is validated by the phase that loads it: the preset name and chain scope (phase 2), the multisig entry (phase 2, re-checked in phase 4), the deployment id intent (phase 4). The distinction tells you *where* a bad value will surface.
 3. **It is what makes an invocation reproducible.** The launch-relevant parts of the run context — selected preset, overrides, multisig entry, resolved deployment id — are exactly what phase 4 writes into the immutable `deployment.yaml`. Recording the invocation is possible only because everything invocation-shaped was fixed here, in one artifact, before anything ran.
 
+### The run context is the programmatic boundary
+
+The phase has two halves, and only the first is about the command line: **parsing argv** into decisions, then **assembling the run context** from them. Phases 2–8 read the assembled artifact and never look at argv, which means the command line is a *producer* of the run context rather than a prerequisite of the run.
+
+That distinction is what makes the engine embeddable. A caller that already knows what it wants to run — a service behind a UI, a test — can construct a run context directly and enter at phase 2, and every rule stated in this doc still applies to it: the [requests-versus-facts split](#the-run-context-artifact) decides where a bad value surfaces regardless of who produced the artifact, and the consistency rules (mutually exclusive options, values outside an enum) are properties of the context, not of the flags that expressed it. A programmatic producer therefore gets the same errors from the same phases; what it skips is argv parsing, never validation.
+
+Two boundaries hold this in place:
+
+- **The context is the entry point; later artifacts are not.** A caller supplies invocation parameters and lets the pipeline derive the resolved plan and the execution plan. Accepting a pre-built downstream artifact would bypass the gates that produce it.
+- **The command line owns argv, output and the exit code — nothing else.** No run behavior may depend on having been invoked from a terminal, which is what keeps "run this deployment" callable without one.
+
+The companion seam is the **config source** in [phase 2](phase-2-load-validation.md#the-config-source-is-a-seam-too): the run context says *what kind of run*, and the config source says *what to run*. Together they are the whole input to a run. The published shape of either — an SDK surface with its own semver — is deferred; see [design-decisions.md → The CLI is an adapter, not the engine](../specs/design-decisions.md#the-cli-is-an-adapter-not-the-engine).
+
 ## Decision flow
 
 ```mermaid

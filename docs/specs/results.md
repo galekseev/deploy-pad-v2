@@ -34,6 +34,16 @@ Every record obeys the rules set by [phase 8 → The record model](../architectu
 
 **Record versioning.** Every YAML record carries a top-level `recordVersion` (and `summary.json` a `schemaVersion`); changes within a version are **additive-only** — consumers never break on new fields. This is the same evolution discipline as the preflight check context.
 
+## Designed for version control
+
+The tree is meant to be committable, and three properties — two of them consequences of the rules above — are what make it so. They matter most on an ephemeral CI runner, where committing the tree back to the repository is how a deployment survives to its next invocation ([ci.md](ci.md)).
+
+- **Secret-free by construction.** Redaction is a property of the record writer, not a habit of its callers (rule 2), so no record can carry a credential into git.
+- **Append-mostly and immutable.** A new `run-N.yaml` per invocation, `deployment.yaml` written once, `--restart` abandoning a directory rather than rewriting one (rule 1). Concurrent edits to the same record are structurally rare, and a diff reads as what happened — a new attempt, a confirmed address, a batch that advanced.
+- **Relocatable.** Every path inside the tree is relative to `--results-dir`, and no record holds an absolute path, a hostname, or any other machine identity. A deployment resumes from a fresh checkout on a different machine exactly as it would on the machine that started it, given the same configs — the portability [NFR-043](../requirements.md) requires and the resume model in [phase 4](../architecture/phase-4-deployment-resolution.md) depends on.
+
+Two things follow for anyone wiring this up. The tree is the **cross-invocation contract**: losing it does not corrupt anything, but it makes the next invocation blind — it sees no prior deployment, so it starts a fresh one instead of resuming ([cli.md → One deployment, many invocations](cli.md#one-deployment-many-invocations)). And `--repos-dir` is the opposite kind of state — disposable clones and build output, re-created every invocation, never committed.
+
 ## `deployment.yaml` — the immutable launch record
 
 Written once by [phase 4](../architecture/phase-4-deployment-resolution.md#writing-deploymentyaml) when a fresh deployment starts; read by every later invocation's resume re-checks.
@@ -235,3 +245,4 @@ Whatever the step's command dropped into `SYS_ARTIFACTS_DIR` during its run, per
 | [multisig.md](multisig.md) | The batch statuses and the waiting-state facts the records and summary carry. |
 | [secrets.md](secrets.md) | The redaction mechanism every record honors. |
 | [cli.md](cli.md) | `status` / `report` (the tree's readers), `--results-dir`, the exit-code table `summary.json` mirrors. |
+| [ci.md](ci.md) | Keeping the tree alive between invocations on an ephemeral runner — the commit-back pattern and the alternatives. |

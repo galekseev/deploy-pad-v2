@@ -10,7 +10,7 @@ The command-line surface of the deploy-pad engine — every command and every fl
 yarn deploy-pad <command> [flags]
 ```
 
-The root `deploy-pad` script is a wrapper: it sources `workspace/configs/.env` into the environment (so `${env.VAR}` references and vault-pointed env vars resolve) and then delegates to the engine CLI. Running the engine from CI works the same way — export the env vars in the workflow step instead (see [engine-internals.md → GitHub Actions](engine-internals.md#github-actions)).
+The root `deploy-pad` script is a wrapper: it sources `workspace/configs/.env` into the environment (so `${env.VAR}` references and vault-pointed env vars resolve) and then delegates to the engine CLI. Running the engine from CI works the same way — export the env vars in the workflow step instead, and keep the results tree alive between invocations (see [ci.md](ci.md)).
 
 ### Commands at a glance
 
@@ -56,9 +56,9 @@ Accepted by every command, except where the [flag matrix](#flags-by-command) nar
 | `--log-level <level>` | `info` | Console output threshold — one ordered scale: `silent` · `error` · `warn` · `info` · `debug`. `debug` adds resolved values and per-phase detail; `error` prints errors only; `silent` prints **nothing at all** — the exit code, the log file, and the results tree carry everything. Secrets stay redacted at every level. |
 | `-v, --verbose` | off | Sugar for `--log-level debug`. |
 | `-q, --quiet` | off | Sugar for `--log-level error`. |
-| `-l, --log-file <path>` | — | Additionally write structured (JSON) logs to a file — always at full `debug` detail, regardless of the console level. The console level filters what a human watches; the file is the complete record. `--log-level silent -l run.json` is the intended CI shape — paired with the machine-readable outcome in `summary.json` ([results.md](results.md#summaryjson--the-machine-readable-summary)). |
+| `-l, --log-file <path>` | — | Additionally write structured (JSON) logs to a file — always at full `debug` detail, regardless of the console level. The console level filters what a human watches; the file is the complete record. `--log-level silent -l run.json` is the intended CI shape — paired with the machine-readable outcome in `summary.json` ([results.md](results.md#summaryjson--the-machine-readable-summary)) and the persistence pattern in [ci.md](ci.md). |
 | `--configs-dir <path>` | `workspace/configs` | Root of the mounted config set — the directory containing `actions.yaml`, `workflows.yaml`, `plans/`, `known-chains.yaml`, `global-params.yaml`, `multisig.yaml`, and the optional `engine.yaml` ([engine.md](engine.md)). Mounting a trimmed directory is the sandboxing mechanism: the files you mount are the allowlist (see [multisig.md → The multisig registry](multisig.md#the-multisig-registry-multisigyaml)). |
-| `--results-dir <path>` | `workspace/results` | Where deployment records are read and written. |
+| `--results-dir <path>` | `workspace/results` | Where deployment records are read and written. The tree is the cross-invocation contract — resume, replay and multisig polling all read it — so on an ephemeral CI runner it has to be persisted between invocations ([ci.md](ci.md)). |
 | `--ignore-version` | off | Downgrade a [config format version](actions.md#top-level-fields) mismatch from a load-time error to a warning and proceed. The deliberate escape hatch for a file you've confirmed still validates against a different engine version — see [engine-internals.md → Config version check](engine-internals.md#config-version-check). |
 
 At most one of `-v` / `-q` / `--log-level` may be given — they set the same value.
@@ -254,7 +254,7 @@ Rules worth internalizing:
 - **Idempotent steps replay** their recorded outputs on resume instead of re-executing ([engine-internals.md → Idempotency lookup](engine-internals.md#idempotency-lookup)); only incomplete work runs.
 - **A completed id gets a suffix.** Re-running after completion starts `<id>-2`, `<id>-3`, … — every deployment keeps its own immutable results directory.
 - **Multisig deployments must repeat their selector.** Every invocation of one multisig deployment passes the same `--multisig <name>`; a mismatch is an error naming the recorded entry ([multisig.md → Turning it on](multisig.md#turning-it-on--the---multisig-selector)).
-- **The engine never waits for humans.** Signature collection happens outside the engine; a waiting run exits (code `10`) and any later invocation polls and advances. CI can simply re-trigger the same job.
+- **The engine never waits for humans.** Signature collection happens outside the engine; a waiting run exits (code `10`) and any later invocation polls and advances. CI can simply re-trigger the same job — provided the results tree survived it ([ci.md](ci.md)).
 
 ## Relationships to other docs
 
@@ -266,6 +266,7 @@ Rules worth internalizing:
 | [actions.md](actions.md) / [engine-internals.md](engine-internals.md) | The config `version` key and the `--ignore-version` escape hatch; the verification model behind `--skip-verify` / `--verify-only`; the idempotency replay behind flag-less resume. |
 | [known-chains.md](known-chains.md) | Everything connection-related. Chain names passed to `--chain` are known-chains names; RPC and verification profiles — and [chain sets](known-chains.md#chain-sets) — are selected in the plan, never on the CLI. |
 | [secrets.md](secrets.md) | Why no flag ever takes a credential value: secrets enter through the vault / env / plan chain and are tagged and redacted; the CLI only selects *names* (`--multisig`, `--preset`). |
+| [ci.md](ci.md) | Running the same invocation unattended: the silent-console/log-file shape, credentials from the job environment, and keeping the results tree alive across invocations. |
 | [naming.md](naming.md) | The v1 → v2 flag renames. |
 
 ## Common mistakes
@@ -280,6 +281,7 @@ Rules worth internalizing:
 - Editing the plan between invocations and expecting the resume to use the new values. The deployment's parameters froze at creation — the engine warns and continues with the recorded set; pass `--refreeze` to adopt the edit (or `--restart` to relaunch). Changed *structure* (workflow, actions) refuses resume outright — start a new deployment.
 - Re-running an unfinished multisig deployment without `--multisig` (or with a different entry). The run errors, naming the recorded entry; pass the recorded selector, or `--restart` to abandon.
 - Treating exit code `10` as a failure in CI. It is the multisig waiting state — schedule a re-run instead of alerting.
+- Running unattended without persisting the results tree. On an ephemeral runner a lost `--results-dir` makes the next invocation blind: it starts a fresh deployment instead of resuming the unfinished one, and a pending multisig proposal is orphaned. See [ci.md](ci.md).
 - Reaching for `--ignore-version` as a routine fix. It exists for a confirmed-compatible file during a migration window; a version mismatch normally means the file needs updating.
 - Expecting `--verify-only` to work without a prior deployment. It verifies recorded addresses — there must be a deployment under the resolved id.
 - Expecting `--dry-run` to produce signable multisig artifacts. It only prints; multisig planning (which simulates and captures transactions) is part of a real `run --multisig` invocation.

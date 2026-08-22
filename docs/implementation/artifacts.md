@@ -77,6 +77,8 @@ Common to every command:
 
 **Not in the artifact.** The process environment. Phase 1 carries it forward but does not read it, and copying a snapshot in would create a second source of truth for values that resolvers read at their own step (FR-REF-019). No field ever holds a credential (FR-SEC-031).
 
+**Producer-agnostic by design.** "Produced from argv" describes the only producer that exists, not a constraint on the type: nothing below phase 1 reads argv, so a caller that constructs a `RunContext` directly enters the pipeline at phase 2 with the same guarantees (NFR-060, [phase 1 → The programmatic boundary](../architecture/phase-1-invocation.md#the-run-context-is-the-programmatic-boundary)). Two implications for the implementation: the consistency rules that phase 1 enforces belong to the *constructor* of the context rather than to the flag parser, so they cannot be bypassed by building one by hand; and the type stays free of commander-shaped residue — no raw option bags, no argv slices — which is what keeps it usable as an entry contract.
+
 ## 2. ResolvedPlan
 
 Produced by [phase 2](../architecture/phase-2-load-validation.md) after four ordered gates: version check, schema, referential rules, value resolution. Fully resolved, per chain, every secret tagged.

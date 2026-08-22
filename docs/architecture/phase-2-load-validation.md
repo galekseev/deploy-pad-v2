@@ -54,6 +54,18 @@ One pipeline step deserves a boundary note: `${system.DEPLOYMENT_ID}` resolves f
 
 See [phase-4-deployment-resolution.md → Decided](phase-4-deployment-resolution.md#decided).
 
+### The config source is a seam too
+
+Everything above is described in terms of files, because a mounted directory is the only config source that exists today. But the four gates do not actually depend on that: **gate 1 compares a declared version, gates 2–4 operate on the parsed object graph** — the actions, workflows, plan, chain registry and global params as data. Reading and parsing YAML is what produces that graph; it is not what validates it.
+
+So the phase has a seam in the same sense [phase 1](phase-1-invocation.md#the-run-context-is-the-programmatic-boundary) does: the YAML loader is **one producer** of the config graph, and a caller that builds the graph in memory — a service behind a UI, a test fixture, a generator — enters immediately after parsing and passes through gates 2–4 unchanged. Three consequences are deliberate:
+
+- **Programmatic construction replaces parsing, never validation.** A workflow referencing an action that does not exist must fail identically whether it was typed into a file or assembled by a caller — otherwise the fail-static principle quietly stops applying to whoever built configs the other way, and `validate`'s completeness guarantee would cover only one kind of author.
+- **Diagnostics already tolerate a missing file.** An error names a location, and the file part of that location may be absent — so an in-memory graph reports with its structural pointer and no filename, with no separate error model.
+- **The allowlist generalizes.** "What is mounted is what the run can use" ([What gets loaded](#what-gets-loaded)) is the file-shaped statement of a broader rule: the **config source** is the allowlist. For a directory that is the mount; for a programmatic producer, the embedding application decides what enters the graph, and inherits the responsibility that mounting otherwise discharges — including the sandboxing role the [multisig registry](../specs/multisig.md#the-multisig-registry-multisigyaml) depends on.
+
+What no caller may hand over is this phase's *output*. The resolved plan is a product of the gates; accepting one would skip them, which is the one thing the seam must not allow. Whether any of this becomes a published API — and what a resume looks like when the configs never came from a file — is deferred: [design-decisions.md → The CLI is an adapter, not the engine](../specs/design-decisions.md#the-cli-is-an-adapter-not-the-engine).
+
 ### One phase, two reporting modes
 
 The same gates run for `run` and for `validate` — but they *report* differently, and that difference is the point of having a separate command:

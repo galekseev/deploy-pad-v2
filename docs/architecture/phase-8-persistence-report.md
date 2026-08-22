@@ -38,6 +38,8 @@ Three rules govern every record:
 - **Redaction.** Secret-tagged values are redacted in every record, mechanically — the tag applied at resolution time ([phase 2 → Gate 4](phase-2-load-validation.md#gate-4--value-resolution)) drives it; no record-writing code decides case by case.
 - **Self-sufficiency.** A deployment's directory answers "what ran" without the configs that produced it: the snapshot carries resolved values, the run records carry per-step inputs/outputs, the pin records carry resolved commits.
 
+A fourth property is a consequence rather than a rule, and is worth naming because something downstream depends on it: the tree is **portable**. Paths inside it are relative to the results root and no record carries machine identity, so the same deployment resumes from a copy of the tree on another machine ([phase 4](phase-4-deployment-resolution.md#the-resume-or-fresh-verdict) reads records, not local state). That is what lets an unattended pipeline persist the tree between invocations — the operator's job, not the engine's, since the engine performs no git operations on the workspace repository ([ci.md](../specs/ci.md)).
+
 ### The summary
 
 The invocation ends with a per-chain, per-step summary: what succeeded, what replayed, what failed and why, what was skipped. For a multisig deployment in the waiting state, the summary additionally shows what is pending and where to sign — the same information `status` will show later. At `--log-level silent` the summary is suppressed like everything else; the exit code, the log file, and the results tree carry the outcome.
@@ -94,6 +96,7 @@ By contrast, a record-write failure **during** phase 7 (a `run-N.yaml` update th
 | [plans.md](../specs/plans.md) | Deployment id semantics — the key of the results tree. |
 | [engine-internals.md](../specs/engine-internals.md) | The idempotency index (rebuilt from `run-N.yaml` files); artifact persistence at collect. |
 | [multisig.md](../specs/multisig.md) | Batch statuses in the records; the waiting-state summary content. |
+| [ci.md](../specs/ci.md) | Keeping the tree alive between invocations when the runner is ephemeral, and the exit-code contract an unattended pipeline branches on. |
 | [secrets.md](../specs/secrets.md) | The redaction guarantee every record honors. |
 | [run-lifecycle.md](run-lifecycle.md) | The map; the failure model whose classes the exit code encodes. |
 

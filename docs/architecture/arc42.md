@@ -183,7 +183,7 @@ flowchart LR
 |---|---|---|
 | **Action / workflow author** | in | Configuration: the actions catalog, workflows and their method variants. Validated and listed through the CLI. |
 | **Release operator** | in / out | A launch invocation (plan, preset, chain scope, sender mode); out: the printed per-chain summary, the report, and the exit code. |
-| **CI system** | in / out | The same invocation, unattended, with secrets from the job environment; out: the exit code and `summary.json`. |
+| **CI system** | in / out | The same invocation, unattended, with secrets from the job environment; out: the exit code and `summary.json`. Also **in**: the results tree of prior invocations, which the pipeline is responsible for carrying across an ephemeral worker — resume, replay and multisig polling all read it ([ci.md](../specs/ci.md)). |
 | **Multisig owner** | out (and around) | The proposal report and the hash to compare — then signatures given **to the Safe, not to the engine**. |
 | **Security reviewer / auditor** | out | The deployment records: launch parameters, frozen values, per-attempt history, confirmed addresses, artifacts. |
 | **Visual editor** | — | Shares the configuration files. Out of scope here; noted because the file formats are a shared contract. |
@@ -201,12 +201,17 @@ flowchart LR
 | Chain RPC | out | JSON-RPC over HTTPS | Selected per chain by named RPC profile, with optional custom headers. Used by preflight probes, in-process calls, broadcasting commands and Safe polling. | [known-chains.md](../specs/known-chains.md) |
 | Block explorers | out | HTTPS | Verification per selected profile, in the `etherscan`, `blockscout` or `sourcify` dialect. | [known-chains.md](../specs/known-chains.md) |
 | Safe Transaction Service | out | HTTPS | MultiSend proposals, signature polling, execution at threshold; an offline export replaces it where no service exists. | [multisig.md → Backend: multisend](../specs/multisig.md#backend-multisend) |
-| Results tree | out (and in) | YAML + JSON on disk | The records; also read back to resume, to answer `status` / `report`, and to rebuild the idempotency index. | [results.md](../specs/results.md) |
+| Results tree | out (and in) | YAML + JSON on disk | The records; also read back to resume, to answer `status` / `report`, and to rebuild the idempotency index. Portable by requirement (no absolute paths, no machine identity), so an unattended pipeline can persist it between invocations. | [results.md](../specs/results.md), [ci.md](../specs/ci.md) |
 | Structured log | out | JSON lines | Always full debug detail regardless of console level; redacted. | [cli.md → Common flags](../specs/cli.md#common-flags) |
 
 ### 3.3 Explicitly out of scope
 
 The visual editor application and its configuration; the v1 → v2 migration mechanics; signature collection and any signing UI; key custody; contract source authoring; and the CREATE3 factory / Safe module deployments themselves, which are operational prerequisites the engine consumes rather than provisions.
+
+Two boundaries are worth stating precisely, because in both cases something adjacent *is* in scope:
+
+- **A published programmatic interface (SDK), and any user interface over it, are out of scope** — but the internal separation that would make one possible is not. The command line is an adapter over the pipeline rather than the pipeline itself, so every command is invocable in-process (NFR-060), and the two entry seams are designed: the run context ([§5.2](#52-level-2--inside-the-engine-process)) and the config source. What is deferred is the *published* surface — exports, semver, progress events (OI-17).
+- **Pipeline mechanics are out of scope** — the engine has no CI awareness, performs no git operations on the workspace it was invoked from, and offers no persistence flag. What is in scope is making the pipeline's job possible: unattended execution, an exit-code contract, and a portable results tree (NFR-043). The recommended pattern is documented in [ci.md](../specs/ci.md), not implemented.
 
 ---
 
@@ -397,8 +402,8 @@ flowchart TB
 
 | Component | Phase | Responsibility | Interface it offers | Notes |
 |---|---|---|---|---|
-| **Invocation parser** | 1 | Fix everything that deliberately lives outside config files: plan, preset request, deployment identity, chain scope, chain mode, sender mode, escape hatches. | run context | Config-blind by design — it decides what *kind* of run this is, and rejects an unknown or misapplied flag before anything loads. |
-| **Config loader** | 2 | Per file, in order: version gate, schema validation, referential validation of everything a schema cannot see. | parsed, cross-checked documents | `validate` is this component plus the value resolver, the workflow resolver and the static planner, run to completion and stopped. Collects all errors rather than stopping at the first. |
+| **Invocation parser** | 1 | Fix everything that deliberately lives outside config files: plan, preset request, deployment identity, chain scope, chain mode, sender mode, escape hatches. | run context | Config-blind by design — it decides what *kind* of run this is, and rejects an unknown or misapplied flag before anything loads. It is *a* producer of the run context, not a prerequisite of the run: nothing downstream reads argv, which is what makes every command invocable in-process (NFR-060, [phase 1 → The programmatic boundary](phase-1-invocation.md#the-run-context-is-the-programmatic-boundary)). |
+| **Config loader** | 2 | Per file, in order: version gate, schema validation, referential validation of everything a schema cannot see. | parsed, cross-checked documents | `validate` is this component plus the value resolver, the workflow resolver and the static planner, run to completion and stopped. Collects all errors rather than stopping at the first. The gates operate on the parsed object graph, so reading YAML is the replaceable part and validation is not ([phase 2 → The config source is a seam too](phase-2-load-validation.md#the-config-source-is-a-seam-too)). |
 | **Plan value resolver** | 2 | The ten-step resolution pipeline: chain references, preset selection, deployment overrides, then `global` → `system` → secrets merge → `vault` → `random` → `env`, per chain. | resolved plan | Owns the strict-miss rule; hands every secret-channel value to the secret registry as it resolves. See [§8.3](#83-value-resolution). |
 | **Secret registry and redactor** | cross-cutting | Tag secret-channel values at the load layer, carry tags through the pipeline, inject under `SEC_`, and substitute reference labels in all output and records. | tagged parameter map, redaction filter | Tagging precedes every enricher so that a derived value cannot escape untagged. See [§8.4](#84-secrets-and-redaction). |
 | **Workflow resolver** | 3 | Flatten nested workflows to one ordered step list with dotted ids, compose parent mappings into nested steps, and apply method-variant overrides per chain. | flat step list with resolved strategy | Resolution is fully static: workflow id + chain determine method, factory flavor and key slot. |
@@ -826,7 +831,7 @@ flowchart TB
         engineC["Engine CLI process<br/>same invocation, unattended;<br/>re-trigger to resume"]
         subgraph wsc["workspace/ — ephemeral"]
             cfgC[("configs/<br/>trimmed per environment")]
-            resC[("results/<br/>worth uploading as a build artifact")]
+            resC[("results/<br/>checked out, then committed back")]
         end
         jobN --> engineC
         engineC --> cfgC
@@ -849,6 +854,7 @@ flowchart TB
     engineC --> rpcN
     engineC -->|"short-lived,<br/>repo-scoped token"| gitN
     engineC -->|"across job re-triggers"| svcN
+    jobN -->|"commits the results tree back —<br/>the engine never touches this repo"| gitN
 
     classDef proc fill:#1168bd,stroke:#0b4884,color:#ffffff
     classDef store fill:#2e7d5b,stroke:#1d5039,color:#ffffff
@@ -865,9 +871,11 @@ The engine has **no environment awareness of its own**. A launch is always the s
 | Environment | What it provides | What differs |
 |---|---|---|
 | **Developer workstation** | Node.js, a persistent `workspace/`, and the wrapper sourcing `configs/.env`. | Credentials come from the local `.env`; checkouts and results survive between runs, so resume and `status` are immediate. |
-| **CI runner** | An ephemeral container or VM (e.g. GitHub Actions) with secrets exported into the job environment. | Credentials come from the CI secret store; the workspace is ephemeral unless cached or uploaded — the results tree is the artifact worth persisting. Resume is a job re-trigger. |
+| **CI runner** | An ephemeral container or VM (e.g. GitHub Actions) with secrets exported into the job environment. | Credentials come from the CI secret store; the workspace does not survive the job, so the **results tree has to be carried over deliberately** — the recommended mechanism is committing it back to the repository that holds the configs, after every invocation. Checkouts and installs are re-created rather than preserved. Resume is a job re-trigger. |
 
 CI operation requires **no engine extensions**: unattended execution, the exit-code contract (in particular code `10`, which lets a pipeline distinguish a pending multisig deployment from success), and flag-less resume are together sufficient to drive even a multi-day multisig launch.
+
+What it does require of the *pipeline* is the persistence above, and this is the one place where forgetting something produces no error at all: the deployment resolver reads an empty results directory and honestly concludes there is nothing to resume. The engine's side of the bargain is a tree that can be moved (NFR-043); the pattern, its guardrails and the alternatives are in [ci.md](../specs/ci.md).
 
 ### 7.2 The workspace on disk
 
@@ -1064,6 +1072,8 @@ The design set keeps **one home for cross-cutting decisions**: [specs/design-dec
 | `${random.N}` — test-only, no determinism | decided (narrowed by the freeze) | [→](../specs/design-decisions.md#randomn-test-only-no-determinism) |
 | Config format versioning — every file | decided | [→](../specs/design-decisions.md#config-format-versioning-every-file) |
 | Vault redaction — show the reference, never the secret | decided | [→](../specs/design-decisions.md#vault-redaction-show-the-reference-never-the-secret) |
+| Results persistence in CI — commit the tree back | decided | [→](../specs/design-decisions.md#results-persistence-in-ci-commit-the-tree-back) |
+| The CLI is an adapter, not the engine | layering decided, published surface deferred | [→](../specs/design-decisions.md#the-cli-is-an-adapter-not-the-engine) |
 | Pluggable step components — collectors and verifiers | direction decided, contracts pending | [→](../specs/design-decisions.md#pluggable-step-components-collectors-and-verifiers) |
 | Format migration | deferred | [→](../specs/design-decisions.md#format-migration) |
 | Removed: legacy output-name transform | decided | [→](../specs/design-decisions.md#removed-legacy-output-name-transform) |
@@ -1141,6 +1151,7 @@ Each scenario is written so it can be tested. Requirement ids trace into [requir
 | **Interface drift across a generation's pins** is an unverified author invariant. | Two pins of one generation build different interfaces; failures surface late, at step execution. | Per-generation isolation limits the blast radius; the check is a known candidate. | OI-9, FR-ACT-007 |
 | **One supported config format version at a time.** | A mixed-version mount cannot be loaded without an escape hatch. | The version gate errors by default and names both versions; `--ignore-version` downgrades it for a confirmed-compatible file. | [engine-internals.md](../specs/engine-internals.md#config-version-check) |
 | **URL-borne RPC credentials outside the vault.** An inline `${env.VAR}` in a URL is not secret-tagged. | A URL-embedded key can appear resolved in output. | Inline `${vault.X}` in RPC URLs is the recommended form and is redacted fragment-wise. | OI-13 |
+| **The resume model assumes the results tree survives.** On an ephemeral CI worker it does not, and the loss is silent: the deployment resolver simply sees no prior deployment. | A re-run starts a fresh deployment instead of resuming — redeploying completed work, or orphaning a Safe proposal that owners are still signing. | The tree is portable by requirement (NFR-043) and safe to commit (secret-free, append-mostly), and the commit-back pattern is documented as the recommended persistence mechanism. A packaged action would remove the remaining foot-gun. | NFR-043, [ci.md](../specs/ci.md), OI-18 |
 
 ### 11.2 Technical debt and known gaps in the design set
 
@@ -1153,7 +1164,7 @@ Each scenario is written so it can be tested. Requirement ids trace into [requir
 | **No install/build caching.** | Every invocation pays full prepare cost, including resumes of immutable pins. | Accepted deliberately — [phase 6 → Decided](phase-6-repo-prepare.md#decided) |
 | **Per-checkout mutex granularity.** A long command in one chain blocks another chain's command in the same checkout. | Reduced parallelism for chains sharing a pin. | OI-8 |
 
-The full open-item register — sixteen items with the requirements each affects — is [requirements.md § 10](../requirements.md#10-open-items-and-assumptions); the raw-idea backlog is [TODO.md](../TODO.md).
+The full open-item register — eighteen items with the requirements each affects — is [requirements.md § 10](../requirements.md#10-open-items-and-assumptions); the raw-idea backlog is [TODO.md](../TODO.md).
 
 ---
 

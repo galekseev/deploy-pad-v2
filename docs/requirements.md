@@ -41,9 +41,9 @@ The document serves three audiences:
 
 ### 1.2 Scope
 
-**In scope:** everything the engine itself must do — the configuration files it reads and validates, the value-resolution and secret-handling rules it enforces, the execution lifecycle it runs, the records it produces, and the command-line surface it exposes. Multisig (Gnosis Safe) deployment support is in scope as an engine capability.
+**In scope:** everything the engine itself must do — the configuration files it reads and validates, the value-resolution and secret-handling rules it enforces, the execution lifecycle it runs, the records it produces, and the command-line surface it exposes. Multisig (Gnosis Safe) deployment support is in scope as an engine capability. Also in scope, as a quality requirement rather than a deliverable: the engine's **internal separation between the command line and the run itself** (NFR-060), which is what keeps a future non-CLI caller possible.
 
-**Out of scope:** the visual editor application (except where a requirement notes an editor-facing consequence), the migration mechanics from v1 configuration formats to v2 (deferred by design), editor-specific configuration (`editor-settings.yaml`, project metadata), and any change to the engine's source-code organization. These follow the same scope boundary the design documentation itself declares.
+**Out of scope:** the visual editor application (except where a requirement notes an editor-facing consequence), any **published programmatic interface (SDK)** and the user interface that would consume it (the boundary is required, the API is not offered — see NFR-060 and OI-17), the migration mechanics from v1 configuration formats to v2 (deferred by design), editor-specific configuration (`editor-settings.yaml`, project metadata), and any change to the engine's source-code organization. Also out of scope: the **pipeline mechanics** around an unattended invocation — how a CI system persists the results tree between runs is documented operational guidance, not engine behavior (see NFR-043 and FR-CLI-041). These follow the same scope boundary the design documentation itself declares.
 
 ### 1.3 How to read this document
 
@@ -632,7 +632,7 @@ In multisig mode the same chain loop runs, but the execute phase is replaced by 
 
 ## 8. Command-line interface
 
-The CLI is the engine's only user interface. Its design follows the run model of the previous chapters: everything per-invocation (preset, deployment id, chains, sender mode) is a flag; everything durable is a file; no flag ever takes a credential value.
+The CLI is the only interface the engine **ships**, and the only one any requirement in this document obliges. It is deliberately thin: it parses an invocation into the run parameters and hands them to the pipeline, so that no run behavior depends on having been started from a terminal (NFR-060). Its design follows the run model of the previous chapters: everything per-invocation (preset, deployment id, chains, sender mode) is a flag; everything durable is a file; no flag ever takes a credential value.
 
 ### 8.1 Commands
 
@@ -669,7 +669,7 @@ The CLI is the engine's only user interface. Its design follows the run model of
 The engine deliberately has no environment awareness of its own: a launch is always the same CLI invocation, and only the surrounding environment (which env vars are set, which configs are mounted) differs between a workstation and a pipeline.
 
 - **FR-CLI-040.** The user shall be able to launch a deployment both **interactively from a workstation** and **from a CI pipeline** (e.g. a GitHub Actions workflow), using the same CLI invocation and the same configuration files, with no engine-side difference beyond environment provisioning. In CI, secrets enter via the job's environment variables (e.g. GitHub Actions secrets exported in the workflow step) instead of the local `workspace/configs/.env` file; everything else — resolution, validation, execution, records — shall behave identically (see NFR-041).
-- **FR-CLI-041.** CI operation shall require no engine extensions: unattended execution (NFR-040), the exit-code contract (FR-CLI-005 — in particular code `10` letting a pipeline distinguish a pending multisig deployment from success or failure), and flag-less resume by re-triggering the same job (FR-CLI-012) shall together be sufficient to drive a deployment from a pipeline, including multi-day multisig launches.
+- **FR-CLI-041.** CI operation shall require no engine extensions: unattended execution (NFR-040), the exit-code contract (FR-CLI-005 — in particular code `10` letting a pipeline distinguish a pending multisig deployment from success or failure), and flag-less resume by re-triggering the same job (FR-CLI-012) shall together be sufficient to drive a deployment from a pipeline, including multi-day multisig launches. Because resume, replay, and multisig polling all read the results directory, a pipeline running on an **ephemeral** worker shall be responsible for persisting that directory between invocations — the engine performs no repository operations on the workspace it was invoked from, and the recommended pattern (committing the results tree back to the repository holding the configs, after every invocation regardless of exit code) shall be documented rather than implemented (see NFR-043).
 - **FR-CLI-042.** For private-repository access from CI, the recommended setup shall be documented: the git token env var (the one the vault's `repository.auth` entry points at) is populated from the CI secret store, preferably via a short-lived, repo-scoped GitHub App installation token rather than a personal access token or the workflow's own `GITHUB_TOKEN` (which cannot read other repositories).
 
 ---
@@ -710,11 +710,18 @@ The functional chapters describe *what* the engine does; this chapter states the
 - **NFR-040.** The engine shall run unattended: no interactive prompts; resumability by re-invocation; exit codes that let CI distinguish success, each failure class, and the multisig pending state.
 - **NFR-041.** The same configuration shall run unchanged on a developer laptop and in CI, with only the environment (env vars, mounted configs) differing.
 - **NFR-042.** The engine shall never block waiting for human input mid-run; long-running human processes (signature collection) are absorbed by the exit-and-resume model.
+- **NFR-043.** The results directory shall be **portable and version-controllable**, so that the exit-and-resume model survives an ephemeral worker: no record shall contain an absolute path, a hostname, or any other machine identity, and every path inside the tree shall be relative to the results root. Given the same configuration, a deployment shall resume from a copy of its results directory on a different machine exactly as it would on the machine that created it. Together with immutable, append-mostly records (NFR-002) and unconditional redaction (NFR-003), this shall make committing the tree to version control a safe persistence mechanism (see FR-CLI-041).
 
 ### 9.6 Config reviewability
 
 - **NFR-050.** Configuration shall remain reviewable in plain diffs: YAML without anchors/aliases/merge keys, reuse only via explicit `${...}` references, schema-validated, with editor tooling support via schema headers.
 - **NFR-051.** Every deviation from a base workflow's deploy strategy shall be an explicitly named, reviewable config entry (a method variant) rather than an override buried in launch values.
+
+### 9.7 Embeddability
+
+The engine ships one interface (chapter 8), and this section does not add another. It states the internal separation that keeps the command line from becoming the only way in — a quality of the code, verifiable today, that a future caller would build on.
+
+- **NFR-060.** No run behavior shall live in the command-line layer. The command line shall be responsible only for parsing an invocation, rendering output, and returning an exit code; every command shall be invocable **in-process** from the invocation parameters alone, without argv, without terminating the process, and without writing to a real console or file system. Constructing those parameters directly shall not bypass any validation: the checks that apply to a parsed command line shall apply identically to programmatically supplied parameters, and the same shall hold for configuration — supplying configuration objects directly shall replace parsing only, never the version, schema, referential, or value-resolution gates (chapter 3). Post-validation internal artifacts shall not be accepted as inputs. Where configuration does not come from a mounted directory, the caller supplying it inherits the allowlist responsibility that mounting otherwise discharges (NFR-033). **[Open item: OI-17]**
 
 ---
 
@@ -740,6 +747,8 @@ Everything in chapters 1–9 reflects **settled** design decisions. The items be
 | OI-14 | **Output renaming across repeated steps** | A raw idea: whether downstream consumers need a renaming surface for outputs when the same action appears in several steps. v2 currently answers this with unique step ids (references are `stepId.OUTPUT`, so no collision) — the idea remains open in the scratchpad. | FR-ACT-040, FR-WFL-030/034. |
 | OI-15 | **Pluggable artifact/verification modules** | A raw idea: extend the pluggable-component model (enrichers/writers) to artifact and ABI collection and to verification. Today those are fixed engine behavior per type. | FR-ACT-050, FR-STP-010-021. |
 | OI-16 | **Design-doc completeness for plans and chains** | The design set's own progress tracker marks the plans and known-chains specs as not yet finalized; requirements in sections 4.2 and 4.6 may evolve with those docs. | FR-CHN-*, FR-PLN-*. |
+| OI-17 | **Published programmatic interface (SDK)** | The internal boundary is required (NFR-060) and its two seams are designed — the invocation parameters and the configuration source. What is undecided is whether any of it becomes a *published* API, and in what shape: which entry points are public (parameter builders, configuration builders over the published config types, one call per command); how a caller without a console observes progress; what a typed outcome carries beyond the exit code and `summary.json`; and what resume means when the configuration never came from a file, given that the deployment record's plan reference and structural fingerprint assume a re-readable source. The trigger is a real second caller — the deferred user interface being the expected one. | NFR-060 (would gain a public-surface counterpart), FR-CLI-001 (would stop being the only entry), FR-CFG-013 (version gate for unparsed configs), FR-PLN-030/031 (resume identity for non-file sources). |
+| OI-18 | **Packaged CI action** | CI operation needs no engine extension (FR-CLI-041), but every consumer currently rewrites the same workflow logic: the unattended invocation shape, results-tree persistence, and the exit-`10`-is-not-a-failure rule. A packaged composite action (or reusable workflow) would carry that pattern instead of documenting it, and would remove the most common CI mistakes by construction. Pure packaging — no engine change. | FR-CLI-040/041 (would gain a supported wrapper), FR-CLI-005 (the exit-code handling it encodes). |
 
 **Assumptions carried by this document:**
 
@@ -767,6 +776,6 @@ The map from requirement areas to their authoritative design sources. Within eac
 | Secrets | FR-SEC-001–031 | [specs/secrets.md](specs/secrets.md), [specs/engine-internals.md](specs/engine-internals.md) (vault resolution & tagging) |
 | Run lifecycle | FR-RUN-001–030 | [architecture/run-lifecycle.md](architecture/run-lifecycle.md) and its per-phase design docs (all reviewed; phase 7 with a noted gap) |
 | Step lifecycle | FR-STP-001–031 | [specs/engine-internals.md](specs/engine-internals.md) |
-| CLI | FR-CLI-001–042 | [specs/cli.md](specs/cli.md) |
-| Non-functional | NFR-001–051 | Cross-cutting: [architecture/run-lifecycle.md](architecture/run-lifecycle.md) (failure model), [specs/secrets.md](specs/secrets.md) (redaction), [README.md](README.md) (format conventions), [specs/design-decisions.md](specs/design-decisions.md) |
-| Open items | OI-1–16 | [specs/design-decisions.md](specs/design-decisions.md) (🔭 items), [specs/known-chains.md](specs/known-chains.md), [specs/multisig.md](specs/multisig.md), [architecture/run-lifecycle.md](architecture/run-lifecycle.md) (open questions), [TODO.md](TODO.md) |
+| CLI | FR-CLI-001–042 | [specs/cli.md](specs/cli.md), [specs/ci.md](specs/ci.md) (unattended operation) |
+| Non-functional | NFR-001–060 | Cross-cutting: [architecture/run-lifecycle.md](architecture/run-lifecycle.md) (failure model), [specs/secrets.md](specs/secrets.md) (redaction), [README.md](README.md) (format conventions), [specs/design-decisions.md](specs/design-decisions.md); [specs/results.md](specs/results.md) + [specs/ci.md](specs/ci.md) (NFR-043), [architecture/phase-1-invocation.md](architecture/phase-1-invocation.md) + [architecture/phase-2-load-validation.md](architecture/phase-2-load-validation.md) (NFR-060) |
+| Open items | OI-1–18 | [specs/design-decisions.md](specs/design-decisions.md) (🔭 items), [specs/known-chains.md](specs/known-chains.md), [specs/multisig.md](specs/multisig.md), [architecture/run-lifecycle.md](architecture/run-lifecycle.md) (open questions), [implementation/stack.md](implementation/stack.md) (§9), [TODO.md](TODO.md) |
