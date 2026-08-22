@@ -301,7 +301,7 @@ The full flag reference (including the flags shared with eoa mode) is in [cli.md
 | `--multisig <name>` | `run` | Selects the registry entry and switches the run to multisig mode. Omitted = eoa mode. Recorded in `deployment.yaml`; resume must repeat it. |
 | `--multisig-cancel` | `run` | Merkle backend: propose a cancellation root for the deployment's pending root (recorded as another attempt). Multisend: withdraw pending proposals from the service queue. |
 
-The machine-readable schema is [schemas/multisig.schema.yaml](schemas/multisig.schema.yaml).
+The machine-readable schema is [packages/schemas/src/multisig.schema.yaml](../../packages/schemas/src/multisig.schema.yaml).
 
 ## Full example
 

@@ -223,7 +223,7 @@ The reserved `sets:` key maps set names to sets; each set maps member chain name
 | `api` | string | yes | — | Verification API base URL (e.g. `https://api.etherscan.io/v2/api`). |
 | `api_key` | string | no | — | API key for this profile. A **single** `${vault.X}` token (preferred) or `${env.X}` token (allowed) — literals are rejected. Omit for keyless APIs (Sourcify, open Blockscout instances). Tagged as a secret and redacted. |
 
-The machine-readable schema is [schemas/known-chains.schema.yaml](schemas/known-chains.schema.yaml).
+The machine-readable schema is [packages/schemas/src/known-chains.schema.yaml](../../packages/schemas/src/known-chains.schema.yaml).
 
 ## Full example
 

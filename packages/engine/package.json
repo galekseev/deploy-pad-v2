@@ -1,0 +1,49 @@
+{
+  "name": "@deploy-pad/engine",
+  "version": "2.0.0",
+  "description": "The deploy-pad deployment engine: repeatable, auditable multi-chain smart-contract launches from declarative config.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/galekseev/deploy-pad-v2.git",
+    "directory": "packages/engine"
+  },
+  "keywords": [
+    "deploy-pad",
+    "ethereum",
+    "deployment",
+    "smart-contracts",
+    "multichain"
+  ],
+  "bin": {
+    "deploy-pad": "./bin/deploy-pad.js"
+  },
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "exports": {
+      ".": {
+        "default": "./dist/index.js"
+      }
+    }
+  },
+  "files": [
+    "bin",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json",
+    "clean": "node --eval \"import('node:fs').then(fs => fs.rmSync('dist', { recursive: true, force: true }))\""
+  },
+  "dependencies": {
+    "@deploy-pad/schemas": "workspace:*",
+    "commander": "^15.0.0"
+  }
+}

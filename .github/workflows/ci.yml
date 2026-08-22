@@ -1,0 +1,79 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+concurrency:
+  group: ci-${{ github.ref }}
+  cancel-in-progress: true
+
+# Four jobs, ordered by how fast they fail (test-strategy.md → CI shape). The
+# integration job — foundry, anvil, a real deployment against a local chain —
+# arrives with the slice that first deploys one.
+#
+# pnpm is installed by its own action, reading the version from the repository's
+# `packageManager` field. Corepack is no longer bundled with node as of 25, and
+# nothing here may depend on `corepack enable` being available (stack.md §3).
+jobs:
+  static:
+    name: Static
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Typecheck
+        run: pnpm run typecheck
+      - name: Lint
+        run: pnpm run lint
+      - name: Version lockstep and config format
+        run: pnpm run check:versions
+      # The generated-types no-diff check joins this one when the type generator
+      # lands; for now it catches a build step that mutates a tracked file.
+      - name: A build leaves the working tree clean
+        run: |
+          pnpm run build
+          git diff --exit-code
+
+  test:
+    name: Fast tests
+    runs-on: ubuntu-latest
+    strategy:
+      fail-fast: false
+      matrix:
+        # The engine's own runtime claim (engines.node ">=24") is a promise to
+        # users that only a matrix keeps honest; a second entry follows the next
+        # LTS line as it arrives.
+        node: [24]
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: ${{ matrix.node }}
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Unit, contract and CLI levels
+        run: pnpm run test
+
+  traceability:
+    name: Traceability and packaging
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v7
+      - uses: pnpm/action-setup@v6
+      - uses: actions/setup-node@v7
+        with:
+          node-version: 24
+          cache: pnpm
+      - run: pnpm install --frozen-lockfile
+      - name: Requirement coverage
+        run: pnpm run check:traceability
+      - name: Packed-artifact smoke test
+        run: pnpm run check:packed

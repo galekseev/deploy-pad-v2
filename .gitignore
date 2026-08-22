@@ -19,6 +19,8 @@ workspace/configs/.env
 # Test and tooling output
 coverage/
 *.log
+*.tgz
+.tmp/
 
 # Editor and OS
 .DS_Store

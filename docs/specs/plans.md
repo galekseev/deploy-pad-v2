@@ -495,7 +495,7 @@ The `deploy` block fields (see [Deploy parameters](#deploy-parameters-deploy-blo
 | `saltBase`     | string               | Optional base from which the engine derives each step's salt as `derive(saltBase, step.id)`, used **only** for `create2` / `create3` steps that have no explicit `salts[stepId]` entry. Falling back to it emits a validation warning (see [Salt resolution](#salt-resolution-and-fallbacks)). Chain-independent. May contain `${...}` refs — but note that embedding `${system.DEPLOYMENT_ID}` ties the derived addresses to the run-time deployment id (see [Deployment id & re-runs](#deployment-id--re-runs)).                                                              |
 
 
-The machine-readable schema is [schemas/plans.schema.yaml](schemas/plans.schema.yaml).
+The machine-readable schema is [packages/schemas/src/plans.schema.yaml](../../packages/schemas/src/plans.schema.yaml).
 
 ## Full example
 

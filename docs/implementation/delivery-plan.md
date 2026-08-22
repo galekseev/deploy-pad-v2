@@ -15,7 +15,7 @@ So the slices are vertical where they can be. The first three produce a real, us
 
 | Slice | What becomes usable | Phases |
 |---|---|---|
-| S0 | The repository builds, publishes and logs | — |
+| S0 | The repository builds, publishes and logs — **delivered** | — |
 | S1 | `deploy-pad` parses every command and refuses every bad invocation; `list` | 1 |
 | S2 | `validate` catches shape and version errors | 2 (gates 1-2) |
 | S3 | `validate` catches everything a file can prove | 2 (gates 3-4) |
@@ -28,7 +28,7 @@ So the slices are vertical where they can be. The first three produce a real, us
 
 ---
 
-## S0 — Scaffold
+## S0 — Scaffold — delivered
 
 **Goal.** A repository that builds, tests, publishes and logs, with nothing engine-specific in it yet.
 
@@ -39,6 +39,18 @@ The schemas also physically move in this slice: `docs/specs/schemas/*.schema.yam
 **Acceptance.** `deploy-pad --help` runs from a tarball installed into a clean directory. CI is green on a pull request. Every example file still resolves its schema in the editor. The exit-code enum matches [cli.md](../specs/cli.md#exit-codes) exactly.
 
 **Not in scope.** Any config reading whatsoever.
+
+**What it claims.** FR-CLI-003, FR-CLI-004, FR-CLI-005 and NFR-003, per [slices.yaml](../../test/traceability/slices.yaml) — four of the catalog's 254, which is the honest starting number.
+
+**What it left for its neighbours.** Written down here rather than left in a branch:
+
+- **Raw config type generation** and the CI check that regeneration produces no diff — [stack.md §6](stack.md#6-the-schemas-package) wants the generated types committed, and the generator is S2 scope, so where the committed output lives is S2's decision. The `dist/` of the schemas package is fully generated and ignored today.
+- **The rest of the common flag set.** `--results-dir` and `--ignore-version` are parsed by the slice that first reads a results tree or a config version; the scaffold takes only the flags the logger and the environment wrapper use, so nothing dead is accepted.
+- **The integration CI job.** Three of the four jobs in [test-strategy.md](test-strategy.md#ci-shape) exist; the one that needs foundry and anvil arrives with S5, which is the first slice with something for it to run.
+- **Validating an example config through the installed binary**, the second half of the packed-artifact smoke test. It packs, installs outside the workspace, drives `--help`, `--version` and the exit codes, and resolves every published subpath — a config to validate arrives with S2.
+- **`TaggedValue`.** The redactor takes a value and its rendering, which is all the seam needs; the type that carries the tag through the artifacts lands with the secrets that populate it in S3.
+
+**One thing worth knowing before the next slice.** The bans on `console.*`, `process.stdout` and `process.exit` are live outside `packages/engine/src/cross/logging/`. The third is the enforcement of "flush before exit": a command returns an `ExitCode` up the stack, and `main.ts` sets `process.exitCode`. A phase that wants to stop the run returns; it does not exit.
 
 ## S1 — Phase 1 and `list`
 

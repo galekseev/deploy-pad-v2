@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../schemas/plans.schema.yaml
+# yaml-language-server: $schema=../../../packages/schemas/src/plans.schema.yaml
 #
 # SINGLE-ACTION PLAN — runs one action without authoring a workflow (see
 # plans.md -> Single-action plans). The `workflow:` field holds an INLINE

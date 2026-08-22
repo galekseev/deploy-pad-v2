@@ -8,7 +8,7 @@ Working design artifact for the next version of deploy-pad. Each file describes 
 
 ## Folder layout
 
-- **[specs/](specs/)** — the config and interface specifications: one doc per config file, plus the cross-cutting specs (references, naming, secrets, CLI) and the per-step engine deep-dive. Companion [schemas/](specs/schemas/) and [examples/](specs/examples/) live alongside them.
+- **[specs/](specs/)** — the config and interface specifications: one doc per config file, plus the cross-cutting specs (references, naming, secrets, CLI) and the per-step engine deep-dive. Worked [examples/](specs/examples/) live alongside them; the machine-readable schemas live in [packages/schemas/src/](../packages/schemas/src/), which publishes them.
 - **[architecture/](architecture/)** — how the engine works end to end, above the level of any single config: the [arc42 architecture document](architecture/arc42.md) (the umbrella view, with the C4 diagrams inline), the run lifecycle, and one design doc per phase.
 - **[implementation/](implementation/)** — the code-level layer: the field-level contracts between run phases, the stack decisions, the delivery order, and the test strategy. Written for engineers building the engine, and deliberately separate from `architecture/`, which stays free of type definitions and code (OC-4). Downstream of everything above it: **where an implementation doc and a spec disagree, the spec wins.**
 - Root — this index, [requirements.md](requirements.md) (the numbered business-requirements document derived from this design set), and [TODO.md](TODO.md) (raw ideas scratchpad).
@@ -48,7 +48,9 @@ Working design artifact for the next version of deploy-pad. Each file describes 
 | [implementation/delivery-plan.md](implementation/delivery-plan.md) | The **build order** — ten vertical slices with acceptance criteria in requirement ids, what gets lifted from v1, and what is deliberately deferred. Not the same as the run's phase order, and the doc explains why |
 | [implementation/test-strategy.md](implementation/test-strategy.md) | The **test levels and their boundaries**, the requirement-to-test traceability check, fixtures, and the guarantees that always get a test (no secret in any output, no credential trace from repo auth, no secret in a preflight context) |
 
-Companion schemas and examples live in [specs/schemas/](specs/schemas/) and [specs/examples/](specs/examples/) — one `.schema.yaml` plus one worked `examples/*.yml` per config file (`actions`, `workflows`, `plans` — two examples, a workflow plan and a single-action plan — `known-chains`, `global-params`, `multisig`, `engine`). The cross-cutting specs, `results.md` (engine-written output), and the architecture docs have neither.
+Companion schemas and examples live in [packages/schemas/src/](../packages/schemas/src/) and [specs/examples/](specs/examples/) — one `.schema.yaml` plus one worked `examples/*.yml` per config file (`actions`, `workflows`, `plans` — two examples, a workflow plan and a single-action plan — `known-chains`, `global-params`, `multisig`, `engine`). The cross-cutting specs, `results.md` (engine-written output), and the architecture docs have neither.
+
+The schemas sit in a package rather than in this folder because they are a contract between repositories — the engine, an author's editor, these specs, and eventually the visual editor all consume them, and npm cannot publish files from above a package root ([implementation/stack.md §6](implementation/stack.md#6-the-schemas-package)). The specs keep owning what each field *means*, and a schema change is reviewed together with the spec that documents it.
 
 ## Conventions
 
@@ -68,17 +70,17 @@ Companion schemas and examples live in [specs/schemas/](specs/schemas/) and [spe
 ### Schemas
 
 - Schema language: **JSON Schema Draft 2020-12**, authored in YAML form (`.schema.yaml`). JSON Schema is a data-model spec — it validates the parsed structure regardless of whether the source was JSON or YAML — so authoring it in YAML buys readability and native comments without giving up tooling.
-- Each config doc links to its `schemas/<name>.schema.yaml` and inlines the top-level shape as an excerpt.
+- Each config doc links to its `packages/schemas/src/<name>.schema.yaml` and inlines the top-level shape as an excerpt.
 
 ### Editor wiring
 
 Every YAML config and example in these docs carries a header comment so the [Red Hat YAML extension](https://marketplace.visualstudio.com/items?itemName=redhat.vscode-yaml) (built into Cursor/VS Code) gives autocomplete, hover docs, and inline validation as you type:
 
 ```yaml
-# yaml-language-server: $schema=../schemas/<name>.schema.yaml
+# yaml-language-server: $schema=../../../packages/schemas/src/<name>.schema.yaml
 ```
 
-The path is relative to **the YAML file itself**, not to the project root — so the same schema is a different path from `configs/actions.yaml` than from `configs/plans/my-plan.yaml`. Example files in this docs folder use `../schemas/...`, which stays short because they sit one level below the schemas.
+The path is relative to **the YAML file itself**, not to the project root — so the same schema is a different path from `configs/actions.yaml` than from `configs/plans/my-plan.yaml`. The example files in this docs folder sit three levels below the repository root, which is why theirs is the longest form you will see; a contract test asserts every one of them still resolves.
 
 For **live workspace configs** the published schema location is the `@deploy-pad/schemas` package, and the recommended wiring is not a per-file modeline but a `yaml.schemas` glob mapping in the workspace's editor settings: one place to point at the schemas, and config files that carry no path at all. A modeline still wins where it appears, which makes it the per-file override. Where the package is installed, the schemas resolve under `node_modules/@deploy-pad/schemas/`; where it is not, a modeline can point at the published JSON over a CDN, pinning the major version so that the schema behind the URL cannot change config format underneath the file. See [implementation/stack.md → The schemas package](implementation/stack.md#6-the-schemas-package).
 

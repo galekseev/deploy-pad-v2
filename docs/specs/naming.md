@@ -111,6 +111,8 @@ These docs originally used **release** for the middle config level (the codebase
 | `schemas/complex-targets.schema.yaml` | `schemas/workflows.schema.yaml` |
 | `schemas/execution-config.schema.yaml` | `schemas/plans.schema.yaml` |
 
+The schemas have since moved out of this folder into [packages/schemas/src/](../../packages/schemas/src/), which publishes them as `@deploy-pad/schemas`. Only their address changed; the names in the table stand.
+
 ### Paths
 
 | v1 | v2 |

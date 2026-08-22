@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../schemas/plans.schema.yaml
+# yaml-language-server: $schema=../../../packages/schemas/src/plans.schema.yaml
 #
 # Worked plan with two presets (`staging` and `prod`), demonstrating a
 # chain-set reference ($set) with a member override and additions, chain

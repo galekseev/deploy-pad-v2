@@ -184,7 +184,7 @@ The field-by-field tables. The conceptual narrative lives in the body sections a
 | `scope` | enum | no | `chain` | `chain` — runs once per chain the invocation will attempt; `run` — runs once per invocation. |
 | `params` | object | no | `{}` | Free-form YAML object passed to the script **verbatim** inside the check context (`context.params`). The engine never interprets it; each check documents its own params (see [`engine:balance` params](#enginebalance-params)). No `${...}` substitution. |
 
-The machine-readable schema is [schemas/engine.schema.yaml](schemas/engine.schema.yaml).
+The machine-readable schema is [packages/schemas/src/engine.schema.yaml](../../packages/schemas/src/engine.schema.yaml).
 
 ## Full example
 

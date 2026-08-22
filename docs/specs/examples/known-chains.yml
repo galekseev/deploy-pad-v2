@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../schemas/known-chains.schema.yaml
+# yaml-language-server: $schema=../../../packages/schemas/src/known-chains.schema.yaml
 #
 # Worked chain registry demonstrating every entry form: the string RPC
 # shorthand, the full form with several named RPC and verification profiles,

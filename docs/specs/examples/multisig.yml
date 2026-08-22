@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../schemas/multisig.schema.yaml
+# yaml-language-server: $schema=../../../packages/schemas/src/multisig.schema.yaml
 #
 # Worked multisig registry demonstrating both execution backends. Each entry
 # is self-contained: backend + per-chain Safe addresses + credentials. The

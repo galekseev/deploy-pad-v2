@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../schemas/engine.schema.yaml
+# yaml-language-server: $schema=../../../packages/schemas/src/engine.schema.yaml
 #
 # Worked engine config (engine.yaml) — the engine's own run-behavior
 # settings; the preflight-checks block is its first tenant. The file is

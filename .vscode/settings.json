@@ -1,0 +1,16 @@
+{
+  "// yaml.schemas": "Points the editor at the authored schemas, not a build artifact, so a schema edit changes completion and validation in live workspace configs immediately. See docs/implementation/stack.md §6. A per-file modeline still wins where it appears, which makes it the override.",
+  "yaml.schemas": {
+    "./packages/schemas/src/actions.schema.yaml": ["workspace/configs/actions.y*ml"],
+    "./packages/schemas/src/workflows.schema.yaml": ["workspace/configs/workflows.y*ml"],
+    "./packages/schemas/src/plans.schema.yaml": ["workspace/configs/plans/*.y*ml"],
+    "./packages/schemas/src/known-chains.schema.yaml": ["workspace/configs/known-chains.y*ml"],
+    "./packages/schemas/src/global-params.schema.yaml": ["workspace/configs/global-params.y*ml"],
+    "./packages/schemas/src/multisig.schema.yaml": ["workspace/configs/multisig.y*ml"],
+    "./packages/schemas/src/engine.schema.yaml": ["workspace/configs/engine.y*ml"]
+  },
+  "files.eol": "\n",
+  "editor.formatOnSave": false,
+  "eslint.useFlatConfig": true,
+  "js/ts.tsdk.path": "node_modules/typescript/lib"
+}

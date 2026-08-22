@@ -1,0 +1,10 @@
+{
+  "extends": "../../tsconfig.base.json",
+  "compilerOptions": {
+    "rootDir": "src",
+    "outDir": "dist",
+    // The engine is a CLI, not a library — nothing consumes its types.
+    "declaration": false
+  },
+  "include": ["src/**/*.ts"]
+}

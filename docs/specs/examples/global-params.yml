@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../schemas/global-params.schema.yaml
+# yaml-language-server: $schema=../../../packages/schemas/src/global-params.schema.yaml
 #
 # Worked global-parameters registry demonstrating both stores: chain-aware
 # constants (a chain-agnostic baseline in `defaults.constants` with per-chain

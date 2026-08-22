@@ -1,0 +1,28 @@
+# The authoritative record of what each delivered slice claims.
+#
+# The prose acceptance lists in docs/implementation/delivery-plan.md are the
+# human view and may use ranges; this file is what scripts/check-traceability.ts
+# reads. A claim without a test naming its id fails CI.
+#
+# Claim a requirement in the slice that delivers its *behaviour*. A slice that
+# builds a mechanism a later slice will use does not claim that slice's
+# requirements, however tempting — otherwise the later slice ships against a
+# test that never exercised it.
+
+slices:
+  - id: S0
+    title: Scaffold
+    status: delivered
+    requirements:
+      # The invocation wrapper sources the config mount's .env.
+      - FR-CLI-003
+      # The common logging flags and the two sinks behind them. The rest of the
+      # common set (--results-dir, --ignore-version) means nothing until
+      # something reads results or a config version, and lands with them.
+      - FR-CLI-004
+      # The closed exit-code set, asserted against the table in cli.md.
+      - FR-CLI-005
+      # The redactor and its enforcement: one output path, checked at every
+      # console level and on the structured sink. S3 adds the end-to-end test,
+      # against real resolved secrets, when secrets first exist.
+      - NFR-003

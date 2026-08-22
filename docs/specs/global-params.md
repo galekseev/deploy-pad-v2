@@ -178,7 +178,7 @@ The field-by-field table. The conceptual narrative lives in the body sections ab
 | `chains.<chainName>.constants` | map<string, string> | no | `{}` | Same shape as `defaults.constants`. Values here win over `defaults` for that chain. |
 | `vault` | map<string, string> | no | `{}` | Registry mapping author-chosen secret names to `${env.VAR}` references. Not chain-aware. See [Vault](#vault). |
 
-The machine-readable schema is [schemas/global-params.schema.yaml](schemas/global-params.schema.yaml).
+The machine-readable schema is [packages/schemas/src/global-params.schema.yaml](../../packages/schemas/src/global-params.schema.yaml).
 
 ## Full example
 

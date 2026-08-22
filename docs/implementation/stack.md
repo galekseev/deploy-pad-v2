@@ -20,7 +20,7 @@ What follows from it:
 - **Shipped checks are compiled, operator checks are not.** Node refuses to strip types from files inside `node_modules`, so the three checks that ship with the engine (`engine:rpc`, `engine:balance`, `engine:create3-factory`) are built to JavaScript before publishing. Operator checks live in the config mount, outside `node_modules`, and run as authored `.ts`. The check contract is identical either way — exit code plus captured output — so nothing about the mechanism becomes privileged for the shipped ones.
 - **Operator scripts are limited to erasable syntax.** No `enum`, no `namespace` with runtime code, no parameter properties, no `import =`. The engine cannot lift that restriction (Node 26 dropped the escape hatch), so the constraint is documented for check authors rather than worked around.
 - **Stack traces stay honest.** Type stripping replaces types with whitespace, so line numbers survive and no source maps are needed for the dev loop.
-- **The wrapper can use `--env-file`.** FR-CLI-003 requires the invocation wrapper to make `workspace/configs/.env` available before the engine resolves `${env.VAR}`. Node loads it natively; `dotenv` is not needed. The wrapper's job is unchanged — only its implementation shrinks.
+- **The wrapper loads the env file natively.** FR-CLI-003 requires the invocation wrapper to make `workspace/configs/.env` available before the engine resolves `${env.VAR}`. Node loads it natively; `dotenv` is not needed. The wrapper's job is unchanged — only its implementation shrinks, and further than expected: `process.loadEnvFile()` works at runtime, so the wrapper is the first thing the CLI *does* rather than a script that re-execs node to pass `--env-file`. One process, no duplicated flag parsing, and the behavior sits in a module a unit test can drive.
 
 ## 2. TypeScript configuration
 
@@ -40,6 +40,8 @@ Two of these are load-bearing rather than taste:
 
 - **`erasableSyntaxOnly`** keeps the engine inside the same syntax budget operator check scripts must live in. Without it the engine could drift into constructs its own extension surface cannot use, and the mismatch would only surface when someone copied engine code into a check. It also means `tsc` reports the violation at authoring time instead of Node throwing `ERR_UNSUPPORTED_TYPESCRIPT_SYNTAX` at runtime.
 - **`noUncheckedIndexedAccess`** matters more here than in an average codebase: most of the engine's data is `Record<chainName, …>` and `Record<stepId, …>` lookups over user-supplied keys, and the whole design premise is that a missing key produces a named error rather than `undefined` flowing onward.
+
+The rest of the settings are ordinary strictness, with one worth naming because it shapes how types get written: **`exactOptionalPropertyTypes`** makes `field?: T` mean "absent", not "possibly `undefined`", which is exactly the distinction the artifact convention rests on ([artifacts.md](artifacts.md#conventions-that-apply-to-all-seven)). Artifact fields model absence explicitly and are never optional; the internal option bags that forward a caller's maybe-value are declared `field?: T | undefined`, which is the honest shape for a pass-through and keeps the two kinds of "missing" visibly different.
 
 Type checking is a separate step from running: Node never type-checks, so `tsc --noEmit` runs in CI and in the pre-commit path, and the dev loop runs `.ts` directly.
 
@@ -69,9 +71,14 @@ packages/
     src/phases/             #   one module per run phase, 1..8
     src/cross/              #   secrets, records, logging, rpc, diagnostics
     src/checks/             #   the three shipped preflight checks
-    bin/deploy-pad          #   wrapper: --env-file, then the CLI
+    src/main.ts             #   the executable entry: env file, then the CLI
+    bin/deploy-pad.js       #   published shim, plain JS by necessity
 docs/                       # this doc set
+test/                       # cross-package contract tests, fixtures, slice claims
+scripts/                    # repository checks: versions, traceability, packed artifact
 ```
+
+**Why the bin is a two-line shim.** A published bin cannot be TypeScript — node refuses to strip types inside `node_modules` ([§1](#1-runtime-baseline-node-24-or-newer)) — so everything with behavior worth testing lives in `src/`, and `bin/deploy-pad.js` only imports it. Making the shim a `.js` file rather than the extensionless `deploy-pad` also keeps it inside the reach of eslint, which is where the ban on writing to a stream directly is enforced ([§7](#7-logging-and-redaction)).
 
 The decomposition inside `packages/engine/src` follows the run lifecycle, because that is the system's real internal structure — each phase is a contract with a named input and output artifact, and `src/cross/` holds what every phase touches. This mirrors [arc42 §5.2](../architecture/arc42.md#52-level-2--inside-the-engine-process) rather than inventing a second decomposition.
 
@@ -90,6 +97,10 @@ Taken, each because something in the specs requires it:
 | `execa` | Every subprocess: git, install, build, step commands, check scripts. Spawns from an argv array without a shell, so nothing the engine passes can be interpolated into a command line — which is what keeps credentials confined to the environment (NFR-031). |
 | `vitest` | Tests, including the CLI-level and integration layers ([test-strategy.md](test-strategy.md)). |
 | `eslint` + `typescript-eslint` | Lint. |
+
+**Each arrives with the slice that first imports it.** A declared-but-unused dependency buys nothing under pnpm's strict `node_modules` — the protection is that an *undeclared* import fails loudly — while it does slow every install and widen the audit surface. So the table is the intended set, not the installed set: the scaffold holds `commander` and `yaml`, and `ajv`, `ethers` and `execa` land with validation, chain access and the first subprocess respectively.
+
+One constraint is worth recording because it is not obvious: **`typescript-eslint` caps the TypeScript version.** Type-aware linting needs the compiler's own API, so the lint dependency's supported range decides which TypeScript the repository can use — currently the 6.x line rather than 7's native compiler. Type-aware rules are what make the redaction and exit-code guarantees enforceable at all, so the cap is accepted rather than worked around.
 
 Deliberately **not** taken, in contrast with v1:
 
@@ -114,7 +125,7 @@ The seven `*.schema.yaml` files serve four consumers: the engine at load time, t
 **The development loop.** A separate package does not mean fetching from a registry while developing — in the monorepo it is a symlink, and the registry is involved only at release. What would slow the loop down is a build step between editing a schema and seeing the effect, so:
 
 - **The engine reads the authored YAML directly**, not the generated JSON. It already depends on `yaml`, and ajv needs a parsed object either way. Editing a schema is immediately visible to the engine and its tests — no build, no version bump. The generated JSON exists purely for external consumers.
-- **`exports` separates source from artifact:** `.yaml` subpaths resolve to the authored files, `.json` and type subpaths to `dist/`. Nothing in the development loop depends on `dist/` existing.
+- **`exports` separates source from artifact:** `.yaml` subpaths resolve to the authored files, `.json` and type subpaths to `dist/`. Nothing in the development loop depends on `dist/` existing — including the package entry that carries the format-version constant, which resolves to `src/index.ts` locally and to `dist/index.js` once published. The two maps are the `exports` field and a `publishConfig.exports` override, which pnpm substitutes when it packs. That works locally because pnpm's symlink resolves to a real path outside `node_modules`, where node will strip types; the published map is what the packed-artifact smoke test exercises, so the two cannot drift silently.
 - **Generated types are committed**, so a fresh clone type-checks without running a generator; CI verifies that regeneration produces no diff. A stale type cannot change a validation verdict — types are compile-time only — so the failure mode is a loud CI diff rather than a wrong result.
 - **`workspace:*` is a symlink locally and an exact version in the published manifest**, which is why the "editable locally" and "pinned when published" requirements do not conflict.
 - **Editor wiring in development** points at the same local files: a `yaml.schemas` glob mapping in the repository's editor settings, so a schema edit changes completion and validation in live workspace configs immediately.

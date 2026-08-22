@@ -570,7 +570,7 @@ A deploy-strategy re-skin of another workflow — same steps, same data wiring; 
 | `mappings` | map<string, MappingValue>             | no                                 | `{}`     | Per-input wiring. Keys are either: (a) one of the consuming step's input names (the names declared by the action), (b) a **built-in parameter** of the step's action type (`builtin.<NAME>`, e.g. `builtin.CALL_ADDRESS` on `contract-call` — a `builtin.` key the type doesn't declare is an error), or (c) for steps that consume a private key, the special key `privateKey` (renames it to a different `secrets.<name>` slot in the plan). A `MappingValue` is a simple **string** (step output ref — optionally indexed, `stepId.OUTPUT[i]` — or bare-name rename), a **list** of sources (sugar for `combine: array`), or an **object** `{ from, pick?, transform?, combine? }` (the production pipeline — see [Production pipeline](#production-pipeline-transforms-combine-and-split)). Deployment method is not a mapping — it is the step's `method`. See [Mappings](#mappings--the-wiring-layer).                                   |
 
 
-The machine-readable schema is [schemas/workflows.schema.yaml](schemas/workflows.schema.yaml).
+The machine-readable schema is [packages/schemas/src/workflows.schema.yaml](../../packages/schemas/src/workflows.schema.yaml).
 
 ## Full example
 

@@ -1,0 +1,50 @@
+{
+  "name": "@deploy-pad/schemas",
+  "version": "2.0.0",
+  "description": "The deploy-pad configuration contract: a JSON Schema per config file, plus the config format version they describe.",
+  "license": "MIT",
+  "type": "module",
+  "engines": {
+    "node": ">=24"
+  },
+  "sideEffects": false,
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/galekseev/deploy-pad-v2.git",
+    "directory": "packages/schemas"
+  },
+  "keywords": [
+    "deploy-pad",
+    "json-schema",
+    "smart-contracts",
+    "deployment"
+  ],
+  "exports": {
+    ".": "./src/index.ts",
+    "./*.schema.yaml": "./src/*.schema.yaml",
+    "./*.schema.json": "./dist/*.schema.json"
+  },
+  "publishConfig": {
+    "access": "public",
+    "provenance": true,
+    "exports": {
+      ".": {
+        "types": "./dist/index.d.ts",
+        "default": "./dist/index.js"
+      },
+      "./*.schema.yaml": "./src/*.schema.yaml",
+      "./*.schema.json": "./dist/*.schema.json"
+    }
+  },
+  "files": [
+    "src/*.schema.yaml",
+    "dist"
+  ],
+  "scripts": {
+    "build": "tsc -p tsconfig.build.json && node scripts/generate-json.ts",
+    "clean": "node --eval \"import('node:fs').then(fs => fs.rmSync('dist', { recursive: true, force: true }))\""
+  },
+  "devDependencies": {
+    "yaml": "^2.9.0"
+  }
+}

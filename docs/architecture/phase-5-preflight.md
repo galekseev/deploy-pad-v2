@@ -175,7 +175,7 @@ The phase **does not stop at the first failure**: every enabled check runs, fail
 
 ## The engine config: `engine.yaml`
 
-*(Field-level spec: [specs/engine.md](../specs/engine.md), with [engine.schema.yaml](../specs/schemas/engine.schema.yaml) and a worked [examples/engine.yml](../specs/examples/engine.yml). This section owns the design rationale.)*
+*(Field-level spec: [specs/engine.md](../specs/engine.md), with [engine.schema.yaml](../../packages/schemas/src/engine.schema.yaml) and a worked [examples/engine.yml](../specs/examples/engine.yml). This section owns the design rationale.)*
 
 Preflight checks need a home, and none of the existing files fits: plans are the **value layer** (per-launch data), known-chains is the **connection registry**, actions/workflows are **structure**. What has no home today is configuration of **the engine's own run behavior** — environment policy that is neither launch data nor connection data. `engine.yaml` is that home; `preflight` is its first tenant.
 

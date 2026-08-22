@@ -1,4 +1,4 @@
-# yaml-language-server: $schema=../schemas/actions.schema.yaml
+# yaml-language-server: $schema=../../../packages/schemas/src/actions.schema.yaml
 #
 # Worked actions.yaml catalog. Notable behaviors are annotated inline below.
 # No action declares a private-key input — PK comes from ${secret.privateKey}
