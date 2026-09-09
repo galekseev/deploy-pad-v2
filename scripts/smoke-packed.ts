@@ -13,7 +13,7 @@
  * resolution walks up into the workspace `node_modules`.
  */
 import { spawnSync } from 'node:child_process';
-import { mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
+import { cpSync, mkdirSync, mkdtempSync, readdirSync, rmSync, writeFileSync } from 'node:fs';
 import { tmpdir } from 'node:os';
 import { join } from 'node:path';
 import { styleText } from 'node:util';
@@ -126,6 +126,19 @@ try {
   check('the exit-code contract survives packaging', () => {
     expect(run(bin, [], consumer).status, 1, 'exit code for a missing command');
     expect(run(bin, ['--no-such-flag'], consumer).status, 1, 'exit code for an unknown flag');
+  });
+
+  // The first check that reads a config file, and therefore the first that would
+  // notice an undeclared YAML parser: `--help` needs no dependency at all.
+  check('deploy-pad list reads a mounted config set through the installed binary', () => {
+    const mount = join(consumer, 'configs');
+    cpSync(join(REPO_ROOT, 'test/fixtures/configs/list-basic'), mount, { recursive: true });
+
+    const result = run(bin, ['list', '--configs-dir', mount], consumer);
+    expect(result.status, 0, `exit code (stderr: ${result.stderr})`);
+    contains(result.stdout, 'escrow-plain', 'the workflows it enumerated');
+    contains(result.stdout, 'aqua.v1.escrow-factory', 'the actions it enumerated');
+    contains(result.stdout, 'presets staging, prod', 'the plans it enumerated');
   });
 
   check("the engine's exports map resolves", () => {

@@ -6,8 +6,9 @@ deployments and calls, in a specific order, on many chains at once, each with it
 own addresses, keys and explorer accounts. This engine makes that sequence a file
 you review rather than a terminal session you hope to remember.
 
-> **Status:** the scaffold. The repository builds, tests, publishes and logs;
-> nothing reads a config yet. See
+> **Status:** the command line is real. Every invocation is either accepted into
+> a frozen run context or refused with exit `1`, and `list` enumerates a mounted
+> config set — but nothing validates a config or touches a chain yet. See
 > [docs/implementation/delivery-plan.md](docs/implementation/delivery-plan.md)
 > for what lands next and in what order.
 
@@ -39,6 +40,9 @@ test/               cross-package contract tests, fixtures, traceability claims
 scripts/            repository checks: versions, traceability, packed artifact
 ```
 
+The full tree, and the rule that decides where a new file goes, is
+[docs/implementation/project-structure.md](docs/implementation/project-structure.md).
+
 ## Working on it
 
 Node 24 or newer and pnpm — the version comes from the `packageManager` field,
@@ -48,6 +52,7 @@ so `pnpm install` is enough and nothing depends on corepack.
 pnpm install
 pnpm run verify           # typecheck, lint, tests, version and traceability checks
 pnpm run deploy-pad --help
+pnpm run deploy-pad list --configs-dir test/fixtures/configs/list-basic
 ```
 
 The dev loop runs TypeScript directly: node strips the types, so there is no
@@ -64,7 +69,7 @@ checking is a separate command because node never does it.
 | `pnpm run check:traceability` | Which requirements a delivered slice claims, and whether a test names each one |
 | `pnpm run check:packed` | Packs both packages, installs the tarballs into a clean directory outside the workspace, and drives the installed binary |
 
-## Two conventions worth knowing before you write code
+## Three conventions worth knowing before you write code
 
 **Nothing writes to a stream directly.** Every line the engine emits leaves
 through the logger, which passes it through the redactor — so a resolved
@@ -79,6 +84,13 @@ chain name at load', …)` — one id per test, and
 delivered slice claims. A claim without a test fails CI; a requirement nothing
 claims yet is reported as information, and is expected to be most of them for a
 while.
+
+**A rule about an invocation goes in the run context's constructor, not in the
+flag parser.** The command line is one producer of a run context, and a caller
+that never had an argv is another — so a check living in the parser would apply
+to only half of them. `packages/engine/src/phases/phase-1/context.ts` is where
+"these two flags are mutually exclusive" and "this value is outside its enum"
+belong; the parser's job is to read argv and hand the values over.
 
 ## License
 

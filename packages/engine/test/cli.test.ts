@@ -82,7 +82,7 @@ describe('the common logging flags', () => {
   });
 
   it('[FR-CLI-004] -v turns on debug detail', () => {
-    const { captured } = invoke(['-v']);
+    const { captured } = invoke(['status', '-v']);
 
     expect(captured.out()).toContain('debug: ');
   });
@@ -95,7 +95,7 @@ describe('the common logging flags', () => {
   });
 
   it('[FR-CLI-004] writes the structured sink at full debug detail while the console is silent', () => {
-    const { captured } = invoke(['--log-level', 'silent', '-l', 'run.json']);
+    const { captured } = invoke(['status', '--log-level', 'silent', '-l', 'run.json']);
 
     expect(captured.logFilePath()).toBe('run.json');
     expect(captured.out()).toBe('');
@@ -110,7 +110,7 @@ describe('the environment wrapper', () => {
     const captured = capture();
     const loaded: string[] = [];
 
-    runCli(['-v', '--configs-dir', 'other/configs'], {
+    runCli(['status', '-v', '--configs-dir', 'other/configs'], {
       streams: captured.streams,
       color: false,
       cwd: '/repo',

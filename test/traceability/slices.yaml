@@ -26,3 +26,38 @@ slices:
       # console level and on the structured sink. S3 adds the end-to-end test,
       # against real resolved secrets, when secrets first exist.
       - NFR-003
+
+  - id: S1
+    title: Phase 1 and list
+    status: delivered
+    requirements:
+      # The five commands, and only those: commander's own `help` subcommand is
+      # switched off so the surface is the one the spec describes.
+      - FR-CLI-001
+      # The plan argument rule. Phase 1 resolves the reference; opening the file
+      # is S2's, which is why nothing here asserts the plan exists.
+      - FR-CLI-002
+      # The per-command flag matrix, read out of cli.md and asserted in both
+      # directions. FR-CLI-004 stays with S0, which delivered the logging half
+      # of the common set; S1 completed it with --results-dir and
+      # --ignore-version and adds tests naming it.
+      - FR-CLI-006
+      # Phase 1 fixing every run parameter that lives outside a config file,
+      # and the six failure modes it can raise.
+      - FR-RUN-002
+      # `list` over a mounted config set. Without a schema gate until S2, so a
+      # malformed entry is reported rather than trusted.
+      - FR-CLI-032
+      # The run context is the programmatic boundary: a command driven
+      # in-process from a hand-built context, and the consistency rules
+      # rejecting a bad one however it was built. S2 and S3 exercise the
+      # config-source half of the same rule without re-claiming the id.
+      - NFR-060
+
+  # Claims decided but not yet earned. Recorded here so the mapping is not
+  # re-argued later; each becomes a slice entry when its tests land, because a
+  # claim without a test naming its id fails the check (see the header).
+  #
+  #   NFR-043 -> S6. Resume is the first reader of the results tree across
+  #     invocations, so it is where "resume from a copy of the tree, at another
+  #     path, behaves identically" becomes testable.

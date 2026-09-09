@@ -1,0 +1,16 @@
+# yaml-language-server: $schema=../../../../packages/schemas/src/workflows.schema.yaml
+#
+# Minimal catalog for the `list` cases: one plain workflow and one method variant
+# of it, which is the distinction FR-CLI-032 asks to be marked.
+
+version: 2
+
+escrow:
+  description: "Deploy the escrow factory."
+  steps:
+    - action: aqua.v1.escrow-factory
+
+escrow-plain:
+  variantOf: escrow
+  methods:
+    "*": create

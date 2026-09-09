@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest';
-import { DEFAULT_CONFIGS_DIR, envFilePath, loadWorkspaceEnv } from '../src/cross/env-file.ts';
+import { DEFAULT_CONFIGS_DIR } from '../src/contracts/index.ts';
+import { envFilePath, loadWorkspaceEnv } from '../src/cross/env-file.ts';
 
 describe('the invocation wrapper', () => {
   it('[FR-CLI-003] sources the config mount .env into the environment', () => {

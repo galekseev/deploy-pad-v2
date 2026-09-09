@@ -6,6 +6,7 @@ export {
 } from './exit-code.ts';
 
 export {
+  INVOCATION_ERROR_CODES,
   WARNING_CODES,
   NO_LOCATION,
   blocksRun,
@@ -16,6 +17,40 @@ export {
   type DiagnosticInput,
   type DiagnosticLocation,
   type DiagnosticSeverity,
+  type ErrorCode,
+  type InvocationErrorCode,
   type RunPhase,
   type WarningCode,
 } from './diagnostic.ts';
+
+export { deepFreeze } from './freeze.ts';
+
+export {
+  CHAIN_MODES,
+  COMMANDS,
+  DEFAULT_CHAIN_MODE,
+  DEFAULT_CONFIGS_DIR,
+  DEFAULT_REPOS_DIR,
+  DEFAULT_RESULTS_DIR,
+  VERIFICATION_STANCES,
+  type ChainMode,
+  type ChainScope,
+  type Command,
+  type CommonContext,
+  type ConsoleSettings,
+  type ConstantOverride,
+  type ContextResult,
+  type DeploymentIdentity,
+  type ListContext,
+  type ListFilters,
+  type Overrides,
+  type PlanRef,
+  type ReportContext,
+  type ReportOutput,
+  type RunCommandContext,
+  type RunContext,
+  type Sender,
+  type StatusContext,
+  type ValidateContext,
+  type VerificationStance,
+} from './run-context.ts';

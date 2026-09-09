@@ -1,0 +1,10 @@
+# A mount whose catalog does not parse. `list` runs before the schema gate exists,
+# but a file that is not YAML at all is a config error at either point.
+
+version: 2
+
+escrow:
+  steps:
+   - action: aqua.v1.escrow-factory
+  description: "indentation that does not close"
+    steps: [

@@ -13,7 +13,6 @@
 import { existsSync } from 'node:fs';
 import { isAbsolute, resolve } from 'node:path';
 
-export const DEFAULT_CONFIGS_DIR = 'workspace/configs';
 export const ENV_FILE_NAME = '.env';
 
 export interface EnvFileOutcome {

@@ -2,7 +2,7 @@
 
 Every phase of the run is a contract: it consumes the previous phase's named artifact and produces one of its own ([run-lifecycle.md](../architecture/run-lifecycle.md#how-phase-docs-are-written)). The architecture docs name those artifacts and describe what they mean; this document gives them **fields**, so a phase can be implemented without inventing the shape its neighbour expects.
 
-> **Status:** Draft, written before the first slice. **Normative until the code exists**: as each type lands in `packages/engine/src/contracts/`, the TypeScript becomes the contract and this document becomes its readable index. Where the two disagree after that point, the types win and this document needs correcting. Landed so far: `Diagnostic`, `DiagnosticCode` and `ExitCode` from [§8](#8-cross-cutting-types). Everything above §8 is still prose.
+> **Status:** Draft, written before the first slice. **Normative until the code exists**: as each type lands in `packages/engine/src/contracts/`, the TypeScript becomes the contract and this document becomes its readable index. Where the two disagree after that point, the types win and this document needs correcting. Landed so far: `RunContext` from [§1](#1-runcontext), and `Diagnostic`, `DiagnosticCode` and `ExitCode` from [§8](#8-cross-cutting-types). §2 through §7 are still prose.
 > **Audience:** engineers implementing a phase.
 > **Why it lives here:** phase docs deliberately carry no type definitions (OC-4). This is the code-level counterpart, not a replacement — every field below traces back to a spec or a numbered requirement, and where a field and a spec disagree, **the spec wins**.
 
@@ -71,13 +71,15 @@ Common to every command:
 
 `command: 'status'`: `plan: PlanRef \| null`, `deploymentIdRequest: string \| null`, `chainScope`, `resultsDir`.
 
-`command: 'report'`: `plan: PlanRef`, `deploymentIdRequest: string \| null`, `chainScope`, `resultsDir`, and `output: { kind: 'file', path: string } \| { kind: 'stdout' }` (FR-CLI-031).
+`command: 'report'`: `plan: PlanRef`, `deploymentIdRequest: string \| null`, `chainScope`, `resultsDir`, and `output: { kind: 'default' } \| { kind: 'file', path: string } \| { kind: 'stdout' }` (FR-CLI-031). `default` is a variant of its own because the default output path is `report.md` *inside the deployment's results directory* — which needs the resolved deployment id, a phase-4 product. Phase 1 cannot name that path, and modelling its absence is what stops it being guessed here.
 
 `command: 'list'`: `filters: { workflows: boolean, actions: boolean, plans: boolean }` — all three true when none is given (FR-CLI-032).
 
 **Not in the artifact.** The process environment. Phase 1 carries it forward but does not read it, and copying a snapshot in would create a second source of truth for values that resolvers read at their own step (FR-REF-019). No field ever holds a credential (FR-SEC-031).
 
 **Producer-agnostic by design.** "Produced from argv" describes the only producer that exists, not a constraint on the type: nothing below phase 1 reads argv, so a caller that constructs a `RunContext` directly enters the pipeline at phase 2 with the same guarantees (NFR-060, [phase 1 → The programmatic boundary](../architecture/phase-1-invocation.md#the-run-context-is-the-programmatic-boundary)). Two implications for the implementation: the consistency rules that phase 1 enforces belong to the *constructor* of the context rather than to the flag parser, so they cannot be bypassed by building one by hand; and the type stays free of commander-shaped residue — no raw option bags, no argv slices — which is what keeps it usable as an entry contract.
+
+In code the split is `contracts/run-context.ts` for the types and `phases/phase-1/context.ts` for the constructors, one per command. Their **inputs are flag-shaped** — a comma-separated chain list, two booleans for the verification stance, a name plus a cancel flag for the sender — which is what leaves them something to enforce: turning `--chain` and `--exclude-chain` into one `ChainScope` is the step at which their exclusivity gets checked. A caller that handed over a finished `ChainScope` would be asserting the rule rather than passing it.
 
 ## 2. ResolvedPlan
 

@@ -57,7 +57,7 @@ For `--set`, the check split is decided: phase 1 validates the **shape** — the
 
 ### Sender mode
 
-Omitted `--multisig` means eoa mode. `--multisig <name>` switches the run to multisig mode and names an entry in `multisig.yaml` — a *request*, validated in phase 2 (entry exists, covers every active chain) and re-checked against the deployment record in phase 4 (a resumed multisig deployment must repeat its selector). `--multisig-cancel` marks the invocation as a cancellation follow-up ([multisig.md](../specs/multisig.md)).
+Omitted `--multisig` means eoa mode. `--multisig <name>` switches the run to multisig mode and names an entry in `multisig.yaml` — a *request*, validated in phase 2 (entry exists, covers every active chain) and re-checked against the deployment record in phase 4 (a resumed multisig deployment must repeat its selector). `--multisig-cancel` marks the invocation as a cancellation follow-up ([multisig.md](../specs/multisig.md)); it cancels the proposals of a *multisig* deployment, so it requires `--multisig <name>` — which every invocation of one has to repeat anyway.
 
 ### Verification stance
 
@@ -134,11 +134,13 @@ The only errors possible in phase 1 are errors of the command line itself:
 | Unknown command or flag | `yarn deploy-pad deploy`, `--pln` |
 | Flag not valid for the command | `status --multisig ops-main`, `report --restart` |
 | Invalid enum value | `--chain-mode fastest` |
-| Malformed `--set` argument | `--set OWNER` (no `=`), `--set 1bad-key=x` (key fails the identifier rule) |
-| Mutually exclusive flags together | `--chain` with `--exclude-chain`; `--skip-verify` with `--verify-only`; `-v` with `--log-level silent` |
-| Missing required flag | `run` without `-e, --plan` |
+| Malformed flag argument | `--set OWNER` (no `=`), `--set 1bad-key=x` (key fails the identifier rule), `--chain ""` (names no chain), `-e ""` (names no plan) |
+| Mutually exclusive flags together | `--chain` with `--exclude-chain`; `--skip-verify` with `--verify-only`; `-v` with `--log-level silent`; `-o` with `--stdout` |
+| Missing required flag | `run` without `-e, --plan`; `--multisig-cancel` without `--multisig` |
 
 All of them exit with code `1`, before anything is loaded and before anything is written — no `deployment.yaml`, no `run-N.yaml`, no results directory entry of any kind.
+
+The table is **closed**, and the implementation depends on that: it carries one diagnostic code per row and nothing else, so a seventh kind of phase-1 error means a seventh row here first. A refusal reports every rule the invocation broke, not only the first — as far as it gets, since a flag the parser cannot read stops it before the rest are examined.
 
 Errors that *look* invocation-shaped but require config knowledge are deliberately not this phase's job:
 

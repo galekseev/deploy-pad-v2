@@ -1,0 +1,22 @@
+# yaml-language-server: $schema=../../../../../packages/schemas/src/plans.schema.yaml
+#
+# A single-action plan — the `workflow` field holds an inline step rather than a
+# workflow id. Deliberately `.yml`, because the plan-reference rule tolerates that
+# suffix and a plan the CLI accepts has to be discoverable.
+
+version: 2
+
+workflow:
+  action: aqua.v2.hand-over
+
+chains:
+  sepolia: {}
+
+presets:
+  prod:
+    type: production
+    defaults:
+      constants:
+        NEW_OWNER_ADDRESS: "0x0000000000000000000000000000000000000003"
+      secrets:
+        privateKey: "${vault.privateKey}"

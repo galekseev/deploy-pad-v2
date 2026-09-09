@@ -16,7 +16,7 @@ So the slices are vertical where they can be. The first three produce a real, us
 | Slice | What becomes usable | Phases |
 |---|---|---|
 | S0 | The repository builds, publishes and logs — **delivered** | — |
-| S1 | `deploy-pad` parses every command and refuses every bad invocation; `list` | 1 |
+| S1 | `deploy-pad` parses every command and refuses every bad invocation; `list` — **delivered** | 1 |
 | S2 | `validate` catches shape and version errors | 2 (gates 1-2) |
 | S3 | `validate` catches everything a file can prove | 2 (gates 3-4) |
 | S4 | `--dry-run` prints the execution plan | 3 |
@@ -44,29 +44,46 @@ The schemas also physically move in this slice: `docs/specs/schemas/*.schema.yam
 
 **What it left for its neighbours.** Written down here rather than left in a branch:
 
-- **Raw config type generation** and the CI check that regeneration produces no diff — [stack.md §6](stack.md#6-the-schemas-package) wants the generated types committed, and the generator is S2 scope, so where the committed output lives is S2's decision. The `dist/` of the schemas package is fully generated and ignored today.
-- **The rest of the common flag set.** `--results-dir` and `--ignore-version` are parsed by the slice that first reads a results tree or a config version; the scaffold takes only the flags the logger and the environment wrapper use, so nothing dead is accepted.
+- **Raw config type generation** and the CI check that regeneration produces no diff — [stack.md §6](stack.md#6-the-schemas-package) wants the generated types committed, and the generator is S2 scope, so where the committed output lives is S2's decision. The `dist/` of the schemas package is fully generated and ignored today. *(Decided ahead of S2: a tracked `types/` directory, because `dist/` is gitignored repository-wide and the package's `clean` deletes it — [stack.md §6.1](stack.md#61-where-the-generated-types-live).)*
+- **The rest of the common flag set.** `--results-dir` and `--ignore-version` are parsed by the slice that first reads a results tree or a config version; the scaffold takes only the flags the logger and the environment wrapper use, so nothing dead is accepted. *(Superseded: S1 took both, because it owns the whole flag matrix and a matrix asserted cell by cell cannot skip two rows.)*
 - **The integration CI job.** Three of the four jobs in [test-strategy.md](test-strategy.md#ci-shape) exist; the one that needs foundry and anvil arrives with S5, which is the first slice with something for it to run.
-- **Validating an example config through the installed binary**, the second half of the packed-artifact smoke test. It packs, installs outside the workspace, drives `--help`, `--version` and the exit codes, and resolves every published subpath — a config to validate arrives with S2.
+- **Validating an example config through the installed binary**, the second half of the packed-artifact smoke test. It packs, installs outside the workspace, drives `--help`, `--version` and the exit codes, and resolves every published subpath — a config to validate arrives with S2. *(Partly discharged: S1 added `list` against a mounted fixture, which is the first check that reads a config file at all and therefore the first that would catch an undeclared YAML parser. Validating one still waits for S2.)*
 - **`TaggedValue`.** The redactor takes a value and its rendering, which is all the seam needs; the type that carries the tag through the artifacts lands with the secrets that populate it in S3.
 
 **One thing worth knowing before the next slice.** The bans on `console.*`, `process.stdout` and `process.exit` are live outside `packages/engine/src/cross/logging/`. The third is the enforcement of "flush before exit": a command returns an `ExitCode` up the stack, and `main.ts` sets `process.exitCode`. A phase that wants to stop the run returns; it does not exit.
 
-## S1 — Phase 1 and `list`
+## S1 — Phase 1 and `list` — delivered
 
 **Goal.** Every invocation the CLI will ever see is either accepted into a run context or rejected with exit `1`.
 
-**Scope.** Command dispatch and the per-command flag matrix ([cli.md](../specs/cli.md#flags-by-command)) built so that a flag outside a command's column cannot be represented, per [artifacts.md §1](artifacts.md#1-runcontext). The frozen `RunContext`. All six phase-1 failure modes. `list`, reading the mount shallowly to enumerate workflows, actions and plans.
+**Scope.** Command dispatch and the per-command flag matrix ([cli.md](../specs/cli.md#flags-by-command)) built so that a flag outside a command's column cannot be represented, per [artifacts.md §1](artifacts.md#1-runcontext). The frozen `RunContext` — assembled **independently of argv**, with the consistency rules (mutual exclusions, enum values, `--set` shape) enforced by its constructor rather than by the flag parser, so that building one by hand cannot bypass them ([phase 1 → The programmatic boundary](../architecture/phase-1-invocation.md#the-run-context-is-the-programmatic-boundary)). All six phase-1 failure modes. `list`, reading the mount shallowly to enumerate workflows, actions and plans.
 
-**Acceptance.** FR-CLI-001, FR-CLI-002, FR-CLI-004, FR-CLI-006, FR-RUN-002 and FR-CLI-032. A table-driven test over the flag matrix: every cell asserted in both directions — accepted where marked, exit `1` where not. `status --multisig ops-main` and `report --restart` fail before anything is read.
+**Acceptance.** FR-CLI-001, FR-CLI-002, FR-CLI-004, FR-CLI-006, FR-RUN-002, FR-CLI-032 and NFR-060. A table-driven test over the flag matrix: every cell asserted in both directions — accepted where marked, exit `1` where not. `status --multisig ops-main` and `report --restart` fail before anything is read.
+
+NFR-060 is claimed here because this is the slice where the run context first exists, and claiming it means proving two things: a command runs **in-process** from a hand-built `RunContext` — no argv, no `process.exit`, no real console or file system — and the consistency rules reject a bad context however it was built. The requirement's configuration half (supplying configs directly replaces *parsing*, never the gates) is exercised again in S2 and S3; that is a stronger test of the same rule rather than a second claim, which is why the id lives here and not there.
 
 **Not in scope.** Everything config-dependent, deliberately: an unknown preset, a chain outside the resolved set, a nonexistent plan file all belong to later phases so that `validate` can report them together. `--chain-mode` is parsed and its value validated here; the semantics arrive in S6. `list` runs without schema validation until S2.
+
+**What it claims.** FR-CLI-001, FR-CLI-002, FR-CLI-006, FR-RUN-002, FR-CLI-032 and NFR-060, per [slices.yaml](../../test/traceability/slices.yaml). FR-CLI-004 stays with S0, which delivered the logging half of the common flag set; S1 finished it and adds tests naming it, but a requirement is claimed by the slice that delivered its behaviour and re-claiming it would say the coverage was earned twice.
+
+**What it decided along the way.** Four things worth knowing before the next slice:
+
+- **The four commands without a pipeline exit `0`.** `run`, `validate`, `status` and `report` assemble and freeze their context, warn that nothing ran, print the context at `debug`, and succeed. They cannot exit `1`: the flag matrix asserts "accepted" against "refused", and a refused exit code for an accepted invocation would make the two indistinguishable. The warning is what keeps the `0` honest.
+- **`--results-dir` and `--ignore-version` landed here**, ahead of the code that reads them, which supersedes S0's note deferring them ("nothing dead is accepted"). S1 owns the whole flag matrix, and a matrix asserted cell by cell cannot skip two of its rows. They are recorded context fields until S5 and S2 respectively.
+- **`-xc` is translated, not declared.** Commander refuses a two-character short flag outright, so a leading `-xc` token is rewritten to `--exclude-chain` before the parser sees argv. The spec keeps its flag and nothing extra becomes accepted — `-x` and `--xc` are still unknown options, which a test asserts.
+- **Commander's `help [command]` subcommand is switched off**, because FR-CLI-001 names five commands and `-h` on each already covers it.
+
+**What it left for its neighbours.**
+
+- **The config source is read-only.** [phases/phase-2/source.ts](../../packages/engine/src/phases/phase-2/source.ts) parses the mount into documents typed `unknown`; the four gates go in front of the same interface in S2, and `list`'s hand-written shape narrowing goes away with them.
+- **Raw config types** still generated by nobody — unchanged from S0, still S2's.
+- **`report`'s default output path.** Phase 1 records `{ kind: 'default' }` rather than a path, because the default lives inside the deployment's results directory and the deployment id is a phase-4 product. S6 resolves it.
 
 ## S2 — Validation gates 1 and 2
 
 **Goal.** `validate` tells an author their file is the wrong shape, in one pass, with every error at once.
 
-**Scope.** ajv over `@deploy-pad/schemas`, `allErrors` on. Generation of raw config types from the schemas, wired into the build. The config version gate and `--ignore-version`. Diagnostic rendering with the JSON Pointer into the offending node.
+**Scope.** ajv over `@deploy-pad/schemas`, `allErrors` on. Generation of raw config types from the schemas into the tracked `types/` directory ([stack.md §6.1](stack.md#61-where-the-generated-types-live)), wired into the build and into the CI no-diff check. The config version gate and `--ignore-version`. Diagnostic rendering with the JSON Pointer into the offending node. `list` drops its hand-written shape narrowing for the generated types.
 
 **Acceptance.** FR-CFG-010 through FR-CFG-015, FR-CLI-020, FR-CLI-021 and NFR-022. A version mismatch exits `1`, a schema violation exits `2`, matching the [failure model](../architecture/run-lifecycle.md#failure-model). The conformance test from [test-strategy.md](test-strategy.md) validates every file in `docs/specs/examples/` against its schema — the first test that would have caught a schema and its documentation drifting apart.
 
@@ -104,7 +121,9 @@ The schemas also physically move in this slice: `docs/specs/schemas/*.schema.yam
 
 **Scope.** The idempotency index rebuilt from attempt records. The three freezes: chain list, parameter set, structural fingerprint. `--restart` and `--refreeze`. Ordinal suffixing of taken ids. `status` and `report` reading only the results tree. The `continue` and `parallel` chain modes, with the chain-prefixed logging and the per-checkout mutex around the execute span.
 
-**Acceptance.** FR-STP-030, FR-STP-031, FR-RUN-005b, FR-RUN-005c, FR-PLN-031, FR-RUN-010 through FR-RUN-014, FR-CLI-012, FR-CLI-030, FR-CLI-031, NFR-002 and NFR-012. Quality scenarios QS-2, QS-7, QS-8 and QS-10 from [arc42 §10.2](../architecture/arc42.md#102-quality-scenarios) become integration tests here — they are already written as executable statements.
+**Acceptance.** FR-STP-030, FR-STP-031, FR-RUN-005b, FR-RUN-005c, FR-PLN-031, FR-RUN-010 through FR-RUN-014, FR-CLI-012, FR-CLI-030, FR-CLI-031, NFR-002, NFR-012 and NFR-043. Quality scenarios QS-2, QS-7, QS-8 and QS-10 from [arc42 §10.2](../architecture/arc42.md#102-quality-scenarios) become integration tests here — they are already written as executable statements.
+
+NFR-043 lands with resume because resume is the only place it can be tested honestly: continuing a deployment from a **copy** of its results tree, at a different path, must behave exactly as continuing it in place. Records exist from S5, but nothing reads them across invocations until here — and that read is what the portability requirement is about. It is the executable form of what the CI persistence pattern depends on ([ci.md](../specs/ci.md)).
 
 ## S7 — The remaining action types, verification, deterministic methods
 

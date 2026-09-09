@@ -7,14 +7,18 @@
  * slices that deliver a run and a validation gate. What is tested here is the
  * mechanism those slices will use.
  */
+import { readFileSync } from 'node:fs';
 import { describe, expect, it } from 'vitest';
 import {
+  INVOCATION_ERROR_CODES,
   NO_LOCATION,
   WARNING_CODES,
   blocksRun,
   diagnosticError,
   diagnosticWarning,
 } from '../../packages/engine/src/contracts/index.ts';
+import { tableUnder } from '../support/markdown.ts';
+import { repoPath } from '../support/paths.ts';
 
 describe('diagnostics', () => {
   it('never block the run, for every enumerated warning code', () => {
@@ -78,5 +82,39 @@ describe('diagnostics', () => {
 
   it('has no duplicate codes', () => {
     expect(new Set(WARNING_CODES).size).toBe(WARNING_CODES.length);
+  });
+});
+
+/**
+ * Phase 1's failure modes are a *closed* table — the only errors the phase can
+ * raise, because everything config-dependent is deliberately left to the phase
+ * that loads it. A closed table is worth pinning: a seventh row added to the spec
+ * with no code behind it, or a seventh code with no row, is the kind of drift that
+ * shows up as a missing error message months later.
+ *
+ * The correspondence is by order, which is why both are maintained in the order
+ * the table lists them.
+ */
+describe('the phase-1 error codes', () => {
+  const PHASE_1 = 'docs/architecture/phase-1-invocation.md';
+
+  it('cover exactly the failure modes the phase-1 design lists', () => {
+    const table = tableUnder(readFileSync(repoPath(PHASE_1), 'utf8'), '## Failure modes', PHASE_1);
+
+    expect(table.header).toEqual(['Failure', 'Example']);
+    expect(INVOCATION_ERROR_CODES).toHaveLength(table.rows.length);
+  });
+
+  it('are all errors, and therefore all stop the invocation', () => {
+    for (const code of INVOCATION_ERROR_CODES) {
+      const error = diagnosticError({ code, phase: 1, message: `${code} happened` });
+
+      expect(error.severity, code).toBe('error');
+      expect(blocksRun(error), code).toBe(true);
+    }
+  });
+
+  it('has no duplicate codes', () => {
+    expect(new Set(INVOCATION_ERROR_CODES).size).toBe(INVOCATION_ERROR_CODES.length);
   });
 });

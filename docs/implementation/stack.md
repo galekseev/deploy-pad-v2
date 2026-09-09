@@ -69,8 +69,10 @@ packages/
   engine/                   # @deploy-pad/engine — bin: deploy-pad
     src/contracts/          #   phase artifacts (artifacts.md)
     src/phases/             #   one module per run phase, 1..8
+    src/commands/           #   one module per command, plus dispatch
     src/cross/              #   secrets, records, logging, rpc, diagnostics
     src/checks/             #   the three shipped preflight checks
+    src/cli.ts              #   argv in, exit code out — and nothing else
     src/main.ts             #   the executable entry: env file, then the CLI
     bin/deploy-pad.js       #   published shim, plain JS by necessity
 docs/                       # this doc set
@@ -78,9 +80,13 @@ test/                       # cross-package contract tests, fixtures, slice clai
 scripts/                    # repository checks: versions, traceability, packed artifact
 ```
 
+The sketch above is the decision. The full tree — every directory the later slices add, what belongs in each, and the ordered questions that place a new file — is [project-structure.md](project-structure.md), which is downstream of this section.
+
 **Why the bin is a two-line shim.** A published bin cannot be TypeScript — node refuses to strip types inside `node_modules` ([§1](#1-runtime-baseline-node-24-or-newer)) — so everything with behavior worth testing lives in `src/`, and `bin/deploy-pad.js` only imports it. Making the shim a `.js` file rather than the extensionless `deploy-pad` also keeps it inside the reach of eslint, which is where the ban on writing to a stream directly is enforced ([§7](#7-logging-and-redaction)).
 
 The decomposition inside `packages/engine/src` follows the run lifecycle, because that is the system's real internal structure — each phase is a contract with a named input and output artifact, and `src/cross/` holds what every phase touches. This mirrors [arc42 §5.2](../architecture/arc42.md#52-level-2--inside-the-engine-process) rather than inventing a second decomposition.
+
+**Why `src/commands/` is not a phase.** A command decides *which* slice of the lifecycle an invocation engages, so it sits above the phases rather than among them: `run` drives all eight, `validate` stops after three, and `status`, `report` and `list` engage none of them and read a tree or a mount directly. Dispatch takes a run context and returns an exit code, which is the whole of what `cli.ts` hands over — the seam that keeps every command invocable without a terminal (NFR-060).
 
 **The third package is expected rather than hypothetical.** The editor will need more than the schemas: to show an author what a step will actually deploy it has to resolve methods, factory flavors and key slots by the same precedence the engine uses, validate mapping arity, derive a salt, and know which namespaces a location accepts. Reimplementing those rules in a separate repository would produce exactly the engine-versus-editor divergence the shared config contract exists to prevent. What keeps that extraction cheap is an invariant rather than an early package: **the rules stay pure — no filesystem, no subprocess, no logger, no `process.env`** — which is the same line the unit level already draws in [test-strategy.md](test-strategy.md). Anything unit-testable without I/O is a `packages/shared` candidate by construction, so promoting it later is a move plus an export list, not an untangling. Until a second consumer actually exists it stays inside `packages/engine`, because publishing an API for one caller costs more than it returns.
 
@@ -125,7 +131,7 @@ Deliberately **not** taken, in contrast with v1:
 
 The seven `*.schema.yaml` files serve four consumers: the engine at load time, the config author's editor, the specs that document them, and — once it exists — the visual editor, which is planned as a separate project and possibly a separate repository. That last consumer is what makes the schemas a **contract between repositories** rather than an internal engine asset, and why they get their own package instead of riding along inside the engine. A browser application should not depend on `ethers` and `execa` to obtain seven YAML files.
 
-**Contents of the package.** The authored `*.schema.yaml` files are the single editable copy. The build generates, into `dist/`, a `*.json` twin of each (browsers, CDNs and third-party tooling consume JSON without a parser) and TypeScript types for the raw config shapes. It also exports the config format version as a constant.
+**Contents of the package.** The authored `*.schema.yaml` files are the single editable copy. The build generates a `*.json` twin of each into `dist/` (browsers, CDNs and third-party tooling consume JSON without a parser), and the raw config types into a tracked `types/` — the two generated outputs differ in whether they are committed, and [§6.1](#61-where-the-generated-types-live) says why. The package also exports the config format version as a constant.
 
 **Versioning.** The **major version of the schemas package equals the config format version**: schemas `2.x` means format `2`. The engine's dependency range then reads as "this engine speaks format 2", changing the format becomes a major release by construction, and the version gate of FR-CFG-013/014 has exactly one source of truth — the constant in the package, not a number duplicated in engine code. TC-4 ("exactly one supported format version at a time") ends up expressed by packaging rather than by discipline.
 
@@ -134,14 +140,33 @@ The seven `*.schema.yaml` files serve four consumers: the engine at load time, t
 **The development loop.** A separate package does not mean fetching from a registry while developing — in the monorepo it is a symlink, and the registry is involved only at release. What would slow the loop down is a build step between editing a schema and seeing the effect, so:
 
 - **The engine reads the authored YAML directly**, not the generated JSON. It already depends on `yaml`, and ajv needs a parsed object either way. Editing a schema is immediately visible to the engine and its tests — no build, no version bump. The generated JSON exists purely for external consumers.
-- **`exports` separates source from artifact:** `.yaml` subpaths resolve to the authored files, `.json` and type subpaths to `dist/`. Nothing in the development loop depends on `dist/` existing — including the package entry that carries the format-version constant, which resolves to `src/index.ts` locally and to `dist/index.js` once published. The two maps are the `exports` field and a `publishConfig.exports` override, which pnpm substitutes when it packs. That works locally because pnpm's symlink resolves to a real path outside `node_modules`, where node will strip types; the published map is what the packed-artifact smoke test exercises, so the two cannot drift silently.
-- **Generated types are committed**, so a fresh clone type-checks without running a generator; CI verifies that regeneration produces no diff. A stale type cannot change a validation verdict — types are compile-time only — so the failure mode is a loud CI diff rather than a wrong result.
+- **`exports` separates source from artifact:** `.yaml` subpaths resolve to the authored files and `.json` subpaths to `dist/`. Nothing in the development loop depends on `dist/` existing — including the package entry that carries the format-version constant, which resolves to `src/index.ts` locally and to `dist/index.js` once published. The two maps are the `exports` field and a `publishConfig.exports` override, which pnpm substitutes when it packs. That works locally because pnpm's symlink resolves to a real path outside `node_modules`, where node will strip types; the published map is what the packed-artifact smoke test exercises, so the two cannot drift silently.
+- **Generated types are committed**, so a fresh clone type-checks without running a generator; CI verifies that regeneration produces no diff. A stale type cannot change a validation verdict — types are compile-time only — so the failure mode is a loud CI diff rather than a wrong result. Where they sit is [§6.1](#61-where-the-generated-types-live).
 - **The generated types are also the future builder contract.** A caller that constructs configs in memory instead of parsing YAML ([phase 2 → The config source is a seam too](../architecture/phase-2-load-validation.md#the-config-source-is-a-seam-too)) needs exactly these raw-config shapes, which is a second reason they are published rather than internal. The version rule pays off twice here: because the schemas major equals the config format version, a builder's compatibility is expressed by its dependency range, so the version gate — a runtime check for a parsed file that declares `version:` — becomes a compile-time property for configs that were never a file.
 - **`workspace:*` is a symlink locally and an exact version in the published manifest**, which is why the "editable locally" and "pinned when published" requirements do not conflict.
 - **Editor wiring in development** points at the same local files: a `yaml.schemas` glob mapping in the repository's editor settings, so a schema edit changes completion and validation in live workspace configs immediately.
 - **Editor wiring for consumers** rides on the registry being public ([§8](#8-build-and-release)). A workspace repository that installs nothing can point its modelines straight at the published JSON through a CDN that serves npm packages — `# yaml-language-server: $schema=https://cdn.jsdelivr.net/npm/@deploy-pad/schemas@2/dist/plans.schema.json` — with the **major pinned in the URL**, so a modeline cannot silently follow the config format across a version boundary. A repository that does install the package maps `yaml.schemas` into `node_modules` instead. This is the concrete consumer the generated `*.json` twin exists for.
 
 The one place the split genuinely costs something is cross-repository iteration with the editor, which will need a link or an override. That is rarer than daily work inside the monorepo.
+
+### 6.1 Where the generated types live
+
+The package generates two things and they want opposite treatment. The `*.schema.json` twin is a **build artifact**: nothing in the repository reads it, so it belongs in `dist/` and stays untracked. The raw config types are **tracked**, because a fresh clone must type-check without running a generator, and a regeneration diff is the check that catches a schema and its types drifting apart. `dist/` cannot hold both — it is gitignored repository-wide and the package's `clean` script deletes it — so the types get their own home:
+
+```
+packages/schemas/
+  src/        authored, the only editable copy
+  types/      generated and committed — the raw config shapes
+  dist/       generated and ignored — the *.schema.json twin, the compiled entry
+```
+
+Three properties follow, and they are the reason this beats un-ignoring a corner of `dist/`:
+
+- **No existing rule gains an exception.** `src/` stays authored-only, `dist/` stays disposable, and `clean` keeps deleting all of it. Git also cannot cleanly re-include a file whose parent directory is excluded, so the alternative would mean rewriting the repository-wide `dist/` rule for one package's benefit.
+- **One `exports` entry, not two.** A tracked `.d.ts` resolves at the same path locally and once published, so the type subpath needs no `publishConfig.exports` override — unlike the `.yaml`/`.json` pair, which needs one precisely because the two maps disagree. `types` joins the `files` list.
+- **The no-diff check is a one-liner.** `git diff --exit-code` over a tracked directory, in the CI job that already runs `pnpm run build` and asserts a clean tree.
+
+The packed-artifact smoke test gains an assertion that the type subpath resolves from the tarball, alongside the one that already counts the reachable schema files — the published `exports` map is the part no monorepo test can exercise.
 
 ## 7. Logging and redaction
 

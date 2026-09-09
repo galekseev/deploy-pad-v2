@@ -11,6 +11,7 @@ import { existsSync, readFileSync, readdirSync } from 'node:fs';
 import { dirname, relative, resolve } from 'node:path';
 import { describe, expect, it } from 'vitest';
 import { CONFIG_FORMAT_VERSION, SCHEMA_NAMES } from '@deploy-pad/schemas';
+import { MOUNT_FILES } from '../../packages/engine/src/phases/phase-2/index.ts';
 import { REPO_ROOT, repoPath } from '../support/paths.ts';
 
 const SCHEMA_DIR = repoPath('packages/schemas/src');
@@ -36,6 +37,13 @@ describe('the schemas package', () => {
 
   it('is the only copy — the docs folder no longer carries one', () => {
     expect(existsSync(repoPath('docs/specs/schemas'))).toBe(false);
+  });
+
+  it('covers every file the engine reads out of a mount, and `plans` besides', () => {
+    // `plans` is the one schema whose documents are a directory rather than a
+    // single file, which is why the config source lists the other six and reaches
+    // plan files through their own call.
+    expect([...MOUNT_FILES, 'plans'].sort()).toEqual([...SCHEMA_NAMES].sort());
   });
 });
 

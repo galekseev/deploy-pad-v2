@@ -418,6 +418,7 @@ flowchart TB
 | **RPC client** | cross-cutting | The engine's own chain access: in-process contract calls, receipt waiting, address prediction, identity and balance probes, Safe polling. | chain operations | ethers v6. |
 | **Record writer** | 4, 7, 8 | Own every file under a deployment directory and the rules they obey: write-once launch record, continuous attempt records, derived aggregates, additive-only versions, redaction by tag. | the results tree | See [§8.11](#811-records-and-reporting). |
 | **Reporter** | 8 | Turn per-chain outcomes into the printed summary, `summary.json` and the exit code; also serve `status` and `report`. | summary, exit code | Best-effort: a reporting failure never masks the run outcome. |
+| **Catalog lister** | — | Enumerate what the mounted config set declares: workflows and their variants, actions by repo and generation, plans with their workflow and presets. | the `list` output | The one command that engages no phase of the run. It reads the mount through the config loader's source and stops there — enough to enumerate, never enough to plan (FR-CLI-032). |
 | **Logger** | cross-cutting | One ordered console level scale plus an always-debug structured log file. | log sinks | Every line passes the redactor; in parallel mode every line carries its chain. |
 
 ### 5.3 Level 3 — the step pipeline and the multisig branch

@@ -85,7 +85,7 @@ The consolidated matrix of which flag each command accepts. Anything outside a c
 | `--repos-dir` / `--cleanup` | ✓ | — | — | — | — |
 | `-o, --output` / `--stdout` | — | — | — | ✓ | — |
 | `--workflows` / `--actions` / `--plans` | — | — | — | — | ✓ |
-| `--log-level` (and `-v` / `-q`) / `-l, --log-file` | ✓ | ✓ | ✓ | ✓ | ✓ |
+| `--log-level` (and `-v, --verbose` / `-q, --quiet`) / `-l, --log-file` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `--configs-dir` / `--ignore-version` | ✓ | ✓ | ✓ | ✓ | ✓ |
 | `--results-dir` | ✓ | — | ✓ | ✓ | — |
 

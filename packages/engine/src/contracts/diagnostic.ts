@@ -14,9 +14,6 @@ export type DiagnosticSeverity = 'error' | 'warning';
 /**
  * The known warnings are a finite list, and enumerating them is what makes
  * "warnings never block" testable per code rather than in the aggregate.
- *
- * Error codes are not enumerated yet: each arrives with the phase gate that
- * raises it, from S2 onward.
  */
 export const WARNING_CODES = [
   /** A step's salt was derived from the plan's `saltBase` rather than given explicitly. */
@@ -39,7 +36,36 @@ export const WARNING_CODES = [
 
 export type WarningCode = (typeof WARNING_CODES)[number];
 
-export type DiagnosticCode = WarningCode;
+/**
+ * The errors of the command line itself, one per row of the failure-mode table
+ * in [phase 1](../../../../docs/architecture/phase-1-invocation.md#failure-modes).
+ * The table is closed — these are the *only* errors phase 1 can raise, because
+ * everything config-dependent is deliberately left to the phase that loads it —
+ * so a contract test pins the two against each other.
+ *
+ * The error codes of the later phases arrive with the gates that raise them,
+ * from S2 onward.
+ */
+export const INVOCATION_ERROR_CODES = [
+  /** `deploy-pad deploy`, `--pln`. */
+  'invocation.unknown-command-or-flag',
+  /** `status --multisig ops-main`, `report --restart`. */
+  'invocation.flag-not-for-command',
+  /** `--chain-mode fastest`. */
+  'invocation.invalid-enum-value',
+  /** `--set OWNER` (no `=`), `--set 1bad-key=x` (key fails the identifier rule), `--chain ""`. */
+  'invocation.malformed-flag-argument',
+  /** `--chain` with `--exclude-chain`, `--skip-verify` with `--verify-only`, `-v` with `--log-level`. */
+  'invocation.mutually-exclusive-flags',
+  /** `run` without `-e, --plan`. */
+  'invocation.missing-required-flag',
+] as const;
+
+export type InvocationErrorCode = (typeof INVOCATION_ERROR_CODES)[number];
+
+export type ErrorCode = InvocationErrorCode;
+
+export type DiagnosticCode = WarningCode | ErrorCode;
 
 /**
  * Where the diagnostic points. `pointer` is a JSON Pointer (RFC 6901) into the
