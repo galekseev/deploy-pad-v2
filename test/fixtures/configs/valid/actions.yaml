@@ -1,0 +1,52 @@
+# yaml-language-server: $schema=../../../../packages/schemas/src/actions.schema.yaml
+#
+# Minimal catalog for the `list` cases: two generations of one repository, so the
+# grouping has something to group, plus an alias and two action types.
+
+version: 2
+
+aqua:
+  framework: foundry
+  repository:
+    uri: "https://github.com/example/aqua.git"
+  generations:
+    v1:
+      releases:
+        v1.0.0:
+          tag: "v1.0.0"
+          latest: true
+      actions:
+        escrow-factory:
+          type: forge-contract
+          description: "Deploy EscrowFactory"
+          contract: "contracts/EscrowFactory.sol:EscrowFactory"
+          inputs:
+            - OWNER_ADDRESS
+          outputs:
+            - ESCROW_FACTORY_ADDRESS
+
+    v2:
+      releases:
+        v2.0.0:
+          tag: "v2.0.0"
+          latest: true
+      actions:
+        escrow-factory:
+          type: forge-contract
+          alias: aqua-escrow
+          description: "Deploy EscrowFactory (v2)"
+          contract: "contracts/EscrowFactory.sol:EscrowFactory"
+          inputs:
+            - OWNER_ADDRESS
+          outputs:
+            - ESCROW_FACTORY_ADDRESS
+
+        hand-over:
+          type: forge-script
+          description: "Post-deploy: transfer EscrowFactory ownership"
+          command: "scripts/TransferOwnership.s.sol:TransferOwnership"
+          deploys: false
+          requiresPrivateKey: true
+          inputs:
+            - NEW_OWNER_ADDRESS
+          outputs: []

@@ -6,12 +6,16 @@ export {
 } from './exit-code.ts';
 
 export {
+  CONFIG_ERROR_CODES,
+  ERROR_EXIT_CODES,
   INVOCATION_ERROR_CODES,
   WARNING_CODES,
   NO_LOCATION,
   blocksRun,
   diagnosticError,
   diagnosticWarning,
+  exitCodeFor,
+  type ConfigErrorCode,
   type Diagnostic,
   type DiagnosticCode,
   type DiagnosticInput,

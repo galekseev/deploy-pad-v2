@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=../../../../packages/schemas/src/multisig.schema.yaml
+#
+# One multisend entry, so that `--multisig ops-main` is a complete invocation
+# against this mount. The proposer is a vault pointer, never a key — and it is
+# not a Safe owner key either, only the delegate that queues transactions.
+
+version: 2
+
+multisigs:
+  ops-main:
+    backend: multisend
+    proposer: "${vault.proposer}"
+    chains:
+      sepolia:
+        safe: "0x1111111111111111111111111111111111111111"

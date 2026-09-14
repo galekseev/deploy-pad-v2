@@ -6,6 +6,8 @@
  * renders the whole accumulated set rather than stopping at the first (NFR-022).
  */
 
+import { ExitCode } from './exit-code.ts';
+
 /** The eight run phases; a diagnostic names the one that produced it. */
 export type RunPhase = 1 | 2 | 3 | 4 | 5 | 6 | 7 | 8;
 
@@ -63,7 +65,33 @@ export const INVOCATION_ERROR_CODES = [
 
 export type InvocationErrorCode = (typeof INVOCATION_ERROR_CODES)[number];
 
-export type ErrorCode = InvocationErrorCode;
+/**
+ * The errors of the config set itself — gates 1 and 2 of
+ * [phase 2](../../../../docs/architecture/phase-2-load-validation.md).
+ *
+ * Unlike phase 1's table these are not a closed set: gates 3 and 4 add their own
+ * in S3, as each gate that raises one lands. What is fixed is which exit code a
+ * code carries, and that split is the failure model's rather than a judgement
+ * made per call site — a file the engine could not read or understand is a
+ * configuration error (`1`), a file it read and found wrong is a validation
+ * error (`2`).
+ */
+export const CONFIG_ERROR_CODES = [
+  /** A file the run needs is not in the mount. Exit 1. */
+  'config.file-missing',
+  /** A file exists and is not YAML the parser can read. Exit 1. */
+  'config.unparseable',
+  /** A file declares a format version this engine does not speak. Exit 1. */
+  'config.version-mismatch',
+  /** A file uses a YAML feature v2 configs may not use: anchors, aliases, merge keys. Exit 2. */
+  'config.yaml-feature-forbidden',
+  /** A file is the wrong shape for its schema. Exit 2. */
+  'config.schema-violation',
+] as const;
+
+export type ConfigErrorCode = (typeof CONFIG_ERROR_CODES)[number];
+
+export type ErrorCode = InvocationErrorCode | ConfigErrorCode;
 
 export type DiagnosticCode = WarningCode | ErrorCode;
 
@@ -90,6 +118,55 @@ export interface Diagnostic {
   readonly message: string;
   /** The FR id this diagnostic enforces, where one applies. */
   readonly requirement: string | null;
+}
+
+/**
+ * Which failure class each error belongs to, from
+ * [the failure model](../../../../docs/architecture/run-lifecycle.md#failure-model).
+ *
+ * A table rather than a decision at each call site, and `satisfies` rather than a
+ * plain annotation: a new error code will not compile until someone has said
+ * which class it is. That is the whole point — the exit codes are a contract with
+ * CI (FR-CLI-005), and the way that contract rots is one call site picking a
+ * number because it was nearby.
+ *
+ * The phase-2 split is the one worth reading twice: a file the engine could not
+ * read or whose format it does not speak is a **configuration** error, because
+ * nothing was validated; a file it read and found wrong is a **validation**
+ * error.
+ */
+export const ERROR_EXIT_CODES = {
+  'invocation.unknown-command-or-flag': ExitCode.Configuration,
+  'invocation.flag-not-for-command': ExitCode.Configuration,
+  'invocation.invalid-enum-value': ExitCode.Configuration,
+  'invocation.malformed-flag-argument': ExitCode.Configuration,
+  'invocation.mutually-exclusive-flags': ExitCode.Configuration,
+  'invocation.missing-required-flag': ExitCode.Configuration,
+  'config.file-missing': ExitCode.Configuration,
+  'config.unparseable': ExitCode.Configuration,
+  'config.version-mismatch': ExitCode.Configuration,
+  'config.yaml-feature-forbidden': ExitCode.Validation,
+  'config.schema-violation': ExitCode.Validation,
+} as const satisfies Record<ErrorCode, ExitCode>;
+
+function isErrorCode(code: DiagnosticCode): code is ErrorCode {
+  return code in ERROR_EXIT_CODES;
+}
+
+/**
+ * The code an invocation ends with, given everything it collected. Warnings never
+ * contribute (FR-RUN-009), and where several classes are present the **earliest
+ * phase** wins — a file that would not load says more about what to fix than the
+ * shape errors that followed it.
+ */
+export function exitCodeFor(diagnostics: readonly Diagnostic[]): ExitCode {
+  const codes = diagnostics
+    .filter(blocksRun)
+    .map((diagnostic) => diagnostic.code)
+    .filter(isErrorCode)
+    .map((code) => ERROR_EXIT_CODES[code]);
+
+  return codes.length === 0 ? ExitCode.Success : (Math.min(...codes) as ExitCode);
 }
 
 export const NO_LOCATION: DiagnosticLocation = Object.freeze({

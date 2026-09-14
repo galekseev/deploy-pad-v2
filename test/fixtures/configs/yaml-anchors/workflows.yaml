@@ -1,0 +1,18 @@
+# Anchors and aliases, which v2 configs may not use (FR-CFG-011): reuse is
+# expressed exclusively through ${...} references, so that a diff shows what a
+# value is rather than where it was borrowed from.
+#
+# No schema can catch this — the parser expands the alias before ajv sees
+# anything, and this file's object graph is perfectly valid. Only the syntax is
+# wrong, so only something reading the document before it becomes data can tell.
+#
+# Deliberately a workflows-only mount: `list --workflows` opens this file and
+# nothing else, so the case needs no other file to be complete.
+
+version: 2
+
+escrow: &base
+  steps:
+    - action: aqua.v1.escrow-factory
+
+escrow-copy: *base

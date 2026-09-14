@@ -22,7 +22,9 @@
   "exports": {
     ".": "./src/index.ts",
     "./*.schema.yaml": "./src/*.schema.yaml",
-    "./*.schema.json": "./dist/*.schema.json"
+    "./*.schema.json": "./dist/*.schema.json",
+    "./types": "./types/index.d.ts",
+    "./types/*": "./types/*.d.ts"
   },
   "publishConfig": {
     "access": "public",
@@ -33,18 +35,22 @@
         "default": "./dist/index.js"
       },
       "./*.schema.yaml": "./src/*.schema.yaml",
-      "./*.schema.json": "./dist/*.schema.json"
+      "./*.schema.json": "./dist/*.schema.json",
+      "./types": "./types/index.d.ts",
+      "./types/*": "./types/*.d.ts"
     }
   },
   "files": [
     "src/*.schema.yaml",
+    "types",
     "dist"
   ],
   "scripts": {
-    "build": "tsc -p tsconfig.build.json && node scripts/generate-json.ts",
+    "build": "tsc -p tsconfig.build.json && node scripts/generate-json.ts && node scripts/generate-types.ts",
     "clean": "node --eval \"import('node:fs').then(fs => fs.rmSync('dist', { recursive: true, force: true }))\""
   },
   "devDependencies": {
+    "json-schema-to-typescript": "^16.0.0",
     "yaml": "^2.9.0"
   }
 }

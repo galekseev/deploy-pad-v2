@@ -54,9 +54,53 @@ slices:
       # config-source half of the same rule without re-claiming the id.
       - NFR-060
 
+  - id: S2
+    title: Validation gates 1 and 2
+    status: delivered
+    requirements:
+      # Configs are YAML, and a file the parser cannot read is refused at load.
+      # FR-CFG-010a — UTF-8, LF, indentation, no JSON — is the authoring half,
+      # split out of this requirement precisely because no test can check it:
+      # JSON *is* valid YAML, and line endings vanish at parse. It stays
+      # unclaimed by design, like the CI persistence pattern of FR-CLI-041.
+      - FR-CFG-010
+      # No anchors, aliases or merge keys. Invisible to a schema — the parser
+      # expands an alias before ajv sees anything — so the config source records
+      # the syntax and gate 1 judges it.
+      - FR-CFG-011
+      # Every file validated against its Draft 2020-12 schema, and every worked
+      # example in docs/specs/examples/ validated against its own. The modeline
+      # half of the requirement was already covered by the schemas contract test.
+      - FR-CFG-012
+      # The version gate's three outcomes: match, mismatch, absent.
+      - FR-CFG-013
+      # The comparison is exact, and --ignore-version moves that gate's verdict
+      # and no other — proved by a schema error in a second file surviving it.
+      - FR-CFG-014
+      # One mounted directory, and a trimmed one is an allowlist rather than a
+      # starting point to search from. One hole is known and specified: the path
+      # form of -e is relative to the project root and may name a plan outside
+      # the mount (cli.md → Plan argument resolution).
+      - FR-CFG-015
+      # validate's exit-code contract: 0 when it would load and pass, 1 for a
+      # file it could not understand, 2 for one it read and found wrong, and
+      # warnings never failing it. FR-CLI-020 is deliberately NOT claimed: it
+      # says validate does everything run does before executing, and referential
+      # rules, value resolution and the static planning checks are S3 and S4. It
+      # is claimed by the slice that completes it.
+      - FR-CLI-021
+      # Errors distinguished from warnings, and every error reported rather than
+      # the first. The reducer is what makes "every error" mean every mistake
+      # rather than every branch ajv tried.
+      - NFR-022
+
   # Claims decided but not yet earned. Recorded here so the mapping is not
   # re-argued later; each becomes a slice entry when its tests land, because a
   # claim without a test naming its id fails the check (see the header).
+  #
+  #   FR-CLI-020 -> S4. `validate` performs "exactly what run checks before
+  #     executing", which is only true once phase 3's static planning checks
+  #     exist. S2 and S3 each deliver a part without earning the id.
   #
   #   NFR-043 -> S6. Resume is the first reader of the results tree across
   #     invocations, so it is where "resume from a copy of the tree, at another

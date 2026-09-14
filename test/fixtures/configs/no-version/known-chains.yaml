@@ -1,0 +1,12 @@
+# yaml-language-server: $schema=../../../../packages/schemas/src/known-chains.schema.yaml
+#
+# One chain, which is all a fixture needs: the mount has to be complete for the
+# engine to load it, not interesting.
+
+version: 2
+
+sepolia:
+  chain_id: 11155111
+  rpc:
+    default:
+      url: "https://rpc.sepolia.example"

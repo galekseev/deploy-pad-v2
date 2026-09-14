@@ -7,6 +7,9 @@
     "packages/*/src/**/*.ts",
     "packages/*/scripts/**/*.ts",
     "packages/*/test/**/*.ts",
+    // Generated, but type-checked: a generator that emits invalid TypeScript
+    // should fail here rather than at the first consumer's import.
+    "packages/*/types/**/*.ts",
     "test/**/*.ts",
     "scripts/**/*.ts",
     "*.config.ts"

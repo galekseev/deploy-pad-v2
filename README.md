@@ -6,9 +6,11 @@ deployments and calls, in a specific order, on many chains at once, each with it
 own addresses, keys and explorer accounts. This engine makes that sequence a file
 you review rather than a terminal session you hope to remember.
 
-> **Status:** the command line is real. Every invocation is either accepted into
-> a frozen run context or refused with exit `1`, and `list` enumerates a mounted
-> config set — but nothing validates a config or touches a chain yet. See
+> **Status:** the front half is real. Every invocation is either accepted into a
+> frozen run context or refused with exit `1`; `validate` loads a mounted config
+> set and reports every version and shape error at once; `list` enumerates what
+> the set declares. What a file says is checked — what it *means* is not, so
+> nothing resolves a reference, a value or a chain yet, and nothing runs. See
 > [docs/implementation/delivery-plan.md](docs/implementation/delivery-plan.md)
 > for what lands next and in what order.
 
@@ -52,7 +54,7 @@ so `pnpm install` is enough and nothing depends on corepack.
 pnpm install
 pnpm run verify           # typecheck, lint, tests, version and traceability checks
 pnpm run deploy-pad --help
-pnpm run deploy-pad list --configs-dir test/fixtures/configs/list-basic
+pnpm run deploy-pad list --configs-dir test/fixtures/configs/valid
 ```
 
 The dev loop runs TypeScript directly: node strips the types, so there is no

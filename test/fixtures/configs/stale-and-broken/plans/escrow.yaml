@@ -1,0 +1,30 @@
+# yaml-language-server: $schema=../../../../../packages/schemas/src/plans.schema.yaml
+#
+# A plan pointing at a workflow id, with two presets — the shape `list --plans`
+# reports.
+
+version: 2
+
+workflow: escrow
+
+chains:
+  sepolia: {}
+
+presets:
+  staging:
+    type: staging
+    defaults:
+      constants:
+        OWNER_ADDRESS: "0x0000000000000000000000000000000000000001"
+      secrets:
+        privateKey: "${vault.privateKey}"
+
+  prod:
+    type: production
+    defaults:
+      constants:
+        OWNER_ADDRESS: "0x0000000000000000000000000000000000000002"
+      secrets:
+        privateKey: "${vault.privateKey}"
+
+default_preset: prod

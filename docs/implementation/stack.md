@@ -114,12 +114,13 @@ Taken, each because something in the specs requires it:
 | `commander` | The CLI surface: five commands, per-command flag validation (FR-CLI-006). Carried over from v1, where it did the same job. |
 | `yaml` | Every config is YAML (TC-3). Also how the engine reads its own schemas — see [§6](#6-the-schemas-package). |
 | `ajv` + `ajv-formats` | JSON Schema Draft 2020-12 validation (FR-CFG-012), with `allErrors` on so gate 2 can report everything at once (NFR-022). |
+| `json-schema-to-typescript` | The raw config types, generated from the authored schemas ([§6.1](#61-where-the-generated-types-live)). A build-time dependency of the schemas package alone, so nothing ships it. Hand-writing the generator was considered and rejected on volume: 2275 lines of schema with 96 `$ref`, 31 `patternProperties` and 22 `oneOf` is a JSON Schema interpreter, not a script. |
 | `ethers` | In-process chain access and ABI encoding (TC-10): `contract-call`, transforms, preflight probes, Safe interaction. |
 | `execa` | Every subprocess: git, install, build, step commands, check scripts. Spawns from an argv array without a shell, so nothing the engine passes can be interpolated into a command line — which is what keeps credentials confined to the environment (NFR-031). |
 | `vitest` | Tests, including the CLI-level and integration layers ([test-strategy.md](test-strategy.md)). |
 | `eslint` + `typescript-eslint` | Lint. |
 
-**Each arrives with the slice that first imports it.** A declared-but-unused dependency buys nothing under pnpm's strict `node_modules` — the protection is that an *undeclared* import fails loudly — while it does slow every install and widen the audit surface. So the table is the intended set, not the installed set: the scaffold holds `commander` and `yaml`, and `ajv`, `ethers` and `execa` land with validation, chain access and the first subprocess respectively.
+**Each arrives with the slice that first imports it.** A declared-but-unused dependency buys nothing under pnpm's strict `node_modules` — the protection is that an *undeclared* import fails loudly — while it does slow every install and widen the audit surface. So the table is the intended set, not the installed set: the scaffold held `commander` and `yaml`, `ajv` and `ajv-formats` arrived with the validation gates, and `ethers` and `execa` still wait for chain access and the first subprocess.
 
 One constraint is worth recording because it is not obvious: **`typescript-eslint` caps the TypeScript version.** Type-aware linting needs the compiler's own API, so the lint dependency's supported range decides which TypeScript the repository can use — currently the 6.x line rather than 7's native compiler. Type-aware rules are what make the redaction and exit-code guarantees enforceable at all, so the cap is accepted rather than worked around.
 

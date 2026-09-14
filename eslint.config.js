@@ -45,7 +45,16 @@ const forbiddenProcessAccess = [
 
 export default tseslint.config(
   {
-    ignores: ['**/dist/**', '**/node_modules/**', 'coverage/**', '.tmp/**'],
+    // `packages/*/types` is generated from the schemas and committed. tsc checks
+    // it (see tsconfig.json), but linting output nobody edits only produces
+    // findings nobody can act on.
+    ignores: [
+      '**/dist/**',
+      '**/node_modules/**',
+      'packages/*/types/**',
+      'coverage/**',
+      '.tmp/**',
+    ],
   },
   {
     files: ['**/*.ts'],

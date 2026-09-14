@@ -25,19 +25,36 @@ import { capture, type Captured } from './support/capture.ts';
  * already tolerates.
  */
 function inMemorySource(graph: Partial<Record<MountFile, unknown>> & { plans?: unknown[] }): ConfigSource {
-  const document = (data: unknown): ConfigDocument => ({ file: null, data });
+  // A document that was never a file has no YAML syntax to be wrong about, and
+  // no file name — which the diagnostic model already tolerates.
+  const document = (data: unknown, file: string | null = null): ConfigDocument => ({
+    file,
+    data,
+    forbidden: [],
+  });
 
   return {
     origin: '(in memory)',
     read: (name: MountFile): Read<ConfigDocument> =>
-      name in graph ? { kind: 'found', value: document(graph[name]) } : { kind: 'missing' },
+      name in graph
+        ? { kind: 'found', value: document(graph[name], `${name}.yaml`) }
+        : { kind: 'missing' },
     plans: (): Read<readonly ConfigDocument[]> =>
       graph.plans === undefined
         ? { kind: 'missing' }
-        : { kind: 'found', value: graph.plans.map(document) },
+        : {
+            kind: 'found',
+            value: graph.plans.map((data, index) => document(data, `plans/${String(index)}.yaml`)),
+          },
+    readAt: (): Read<ConfigDocument> => ({ kind: 'missing' }),
   };
 }
 
+/**
+ * Schema-valid, because gate 2 runs over a caller-supplied graph exactly as it
+ * runs over a mount — which is the half of NFR-060 that says supplying
+ * configuration directly replaces parsing and nothing else.
+ */
 const GRAPH = {
   workflows: {
     version: 2,
@@ -47,12 +64,32 @@ const GRAPH = {
   actions: {
     version: 2,
     aqua: {
+      framework: 'foundry',
+      repository: { uri: 'https://github.com/example/aqua.git' },
       generations: {
-        v1: { actions: { 'escrow-factory': { type: 'forge-contract', alias: 'aqua-escrow' } } },
+        v1: {
+          releases: { 'v1.0.0': { tag: 'v1.0.0', latest: true } },
+          actions: {
+            'escrow-factory': {
+              type: 'forge-contract',
+              alias: 'aqua-escrow',
+              contract: 'contracts/EscrowFactory.sol:EscrowFactory',
+              inputs: ['OWNER_ADDRESS'],
+              outputs: ['ESCROW_FACTORY_ADDRESS'],
+            },
+          },
+        },
       },
     },
   },
-  plans: [{ version: 2, workflow: 'escrow', presets: { prod: {} } }],
+  plans: [
+    {
+      version: 2,
+      workflow: 'escrow',
+      chains: { sepolia: {} },
+      presets: { prod: { defaults: { constants: { OWNER_ADDRESS: '0x01' } } } },
+    },
+  ],
 };
 
 function context(): ListContext {

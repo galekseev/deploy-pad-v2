@@ -11,7 +11,7 @@ import { COMMANDS, ExitCode } from '../../src/contracts/index.ts';
 import { repoPath } from '../../../../test/support/paths.ts';
 import { capture, type Captured } from '../support/capture.ts';
 
-const MOUNT = repoPath('test/fixtures/configs/list-basic');
+const MOUNT = repoPath('test/fixtures/configs/valid');
 
 /** A complete, valid invocation of each command — the minimum each one needs. */
 const INVOCATIONS: Record<string, readonly string[]> = {
@@ -53,7 +53,7 @@ describe('the command surface', () => {
 });
 
 describe('a command whose phases have not landed', () => {
-  for (const command of ['run', 'validate', 'status', 'report'] as const) {
+  for (const command of ['status', 'report'] as const) {
     it(`[FR-RUN-002] ${command} accepts the invocation and warns that nothing ran`, () => {
       const { exit, captured } = invoke(INVOCATIONS[command] ?? []);
 
@@ -61,6 +61,13 @@ describe('a command whose phases have not landed', () => {
       expect(captured.err()).toContain(`warning: ${command} is not implemented yet`);
     });
   }
+
+  it('[FR-RUN-002] run passes the config gates and says the rest has not landed', () => {
+    const { exit, captured } = invoke(INVOCATIONS['run'] ?? []);
+
+    expect(exit).toBe(ExitCode.Success);
+    expect(captured.err()).toContain('run is not implemented past config loading yet');
+  });
 
   it('[FR-RUN-002] shows the run context it assembled at debug level', () => {
     const { captured } = invoke(['run', '-e', 'escrow', '--preset', 'prod', '-xc', 'zksync', '-v']);
@@ -70,7 +77,7 @@ describe('a command whose phases have not landed', () => {
     expect(captured.out()).toContain('"chainScope":{"kind":"exclude","chains":["zksync"]}');
   });
 
-  it('[FR-RUN-002] says nothing about an unimplemented command at --log-level silent', () => {
+  it('[FR-RUN-002] says nothing at all at --log-level silent', () => {
     const { exit, captured } = invoke(['run', '-e', 'escrow', '--log-level', 'silent']);
 
     expect(exit).toBe(ExitCode.Success);

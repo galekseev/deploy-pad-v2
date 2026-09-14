@@ -132,7 +132,7 @@ try {
   // notice an undeclared YAML parser: `--help` needs no dependency at all.
   check('deploy-pad list reads a mounted config set through the installed binary', () => {
     const mount = join(consumer, 'configs');
-    cpSync(join(REPO_ROOT, 'test/fixtures/configs/list-basic'), mount, { recursive: true });
+    cpSync(join(REPO_ROOT, 'test/fixtures/configs/valid'), mount, { recursive: true });
 
     const result = run(bin, ['list', '--configs-dir', mount], consumer);
     expect(result.status, 0, `exit code (stderr: ${result.stderr})`);
@@ -180,6 +180,38 @@ try {
     expect(resolved.CONFIG_FORMAT_VERSION, CONFIG_FORMAT_VERSION, 'the exported format version');
     expect(resolved.files, 14, 'schema files reachable by subpath (7 yaml + 7 json)');
     expect(resolved.ok, true, 'every schema file readable');
+  });
+
+  // The generated types are the one published artifact with no runtime presence,
+  // so nothing else in this file would notice their subpath going missing.
+  check('the generated config types ship, and resolve by subpath', () => {
+    const result = must(
+      'node',
+      [
+        '--eval',
+        `const { readFileSync } = await import('node:fs');
+         const { SCHEMA_NAMES } = await import('@deploy-pad/schemas');
+         const read = (specifier) =>
+           readFileSync(new URL(import.meta.resolve(specifier)), 'utf8');
+         const barrel = read('@deploy-pad/schemas/types');
+         const perSchema = SCHEMA_NAMES.map((name) =>
+           read('@deploy-pad/schemas/types/' + name).length > 0);
+         process.stdout.write(JSON.stringify({
+           roots: (barrel.match(/^export type /gmu) ?? []).length,
+           files: perSchema.length,
+           ok: perSchema.every(Boolean),
+         }));`,
+      ],
+      consumer,
+    );
+    const resolved = JSON.parse(result.stdout) as {
+      roots: number;
+      files: number;
+      ok: boolean;
+    };
+    expect(resolved.roots, 7, 'root types re-exported by the barrel');
+    expect(resolved.files, 7, 'per-schema type modules reachable by subpath');
+    expect(resolved.ok, true, 'every type module readable');
   });
 } finally {
   rmSync(root, { recursive: true, force: true });

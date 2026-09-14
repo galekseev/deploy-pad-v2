@@ -125,10 +125,11 @@ Four buckets under `src/`, and the boundary between them is what the code is *ab
 ```
     commands/
       index.ts              # dispatch: a run context in, an exit code out
+      diagnostics.ts        # one rendering, every command — CI greps this
       list.ts
+      validate.ts
+      run.ts                # gates only so far; phases 3-8 arrive with S4 and S5
       unimplemented.ts      # the placeholder each command below replaces as it lands
-      validate.ts           # S2
-      run.ts                # S5
       status.ts             # S6
       report.ts             # S6
 ```
@@ -171,8 +172,10 @@ The number is in the directory name because the run's phases are numbered everyw
       phase-2/                  # four gates → ResolvedPlan
         index.ts
         source.ts               # the config source seam: a mount, or a graph a caller supplies
-        version.ts              # S2 — gate 1
-        schema.ts               # S2 — gate 2, ajv over @deploy-pad/schemas
+        load.ts                 # the gates in order, in one of two reporting modes
+        version.ts              # gate 1, plus the YAML features only the parser can see
+        schema.ts               # gate 2, ajv over @deploy-pad/schemas
+        reduce-errors.ts        # ajv's branch noise down to the mistake an author made
         referential.ts          # S3 — gate 3, everything a schema cannot see
         resolve/                # S3 — gate 4: the ten steps, six namespaces, per chain
       phase-3/                  # S4 → ExecutionPlan
@@ -260,9 +263,10 @@ packages/engine/test/
   cli.test.ts
   in-process.test.ts            # a command driven from a hand-built context — NFR-060
   env-file.test.ts
-  commands/{dispatch,list}.test.ts
+  commands/{dispatch,list,validate}.test.ts
   logging/{logger,redaction,serialize}.test.ts
   phase-1/{failure-modes,normalize,run-context}.test.ts
+  phase-2/{version,reduce-errors}.test.ts
   support/capture.ts            # the captured streams, clock and log sink every CLI test drives
 
 test/
@@ -271,7 +275,7 @@ test/
     diagnostics.test.ts
     flag-matrix.test.ts         # every cell, both directions, read out of the spec
     schemas.test.ts             # every modeline and doc link still resolves
-    examples.test.ts            # S2 — every example validates against its schema
+    examples.test.ts            # every example validates against its schema
     records.test.ts             # S5 — every written record against its schema, plus a golden per kind
   integration/                  # S5 — a full run against a local anvil
   fixtures/

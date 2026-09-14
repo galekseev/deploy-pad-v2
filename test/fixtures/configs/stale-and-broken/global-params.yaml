@@ -1,0 +1,12 @@
+# The version is current, so gate 1 passes and gate 2 runs — and finds a section
+# no schema declares. A second failing file, in a second failure class, which is
+# what lets one mount show the difference between collecting every error and
+# stopping at the first.
+
+version: 2
+
+defaults:
+  constants:
+    WETH_ADDRESS: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+
+notASection: "no schema declares this"

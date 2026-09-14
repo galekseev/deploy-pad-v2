@@ -1,0 +1,13 @@
+# yaml-language-server: $schema=../../../../packages/schemas/src/global-params.schema.yaml
+#
+# The vault entry is a pointer to an environment variable, never a credential —
+# which is also why this file is safe to commit.
+
+version: 2
+
+defaults:
+  constants:
+    WETH_ADDRESS: "0xC02aaA39b223FE8D0A0e5C4F27eAD9083C756Cc2"
+
+vault:
+  privateKey: "${env.PK_DEPLOYER}"

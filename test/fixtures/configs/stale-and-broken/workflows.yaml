@@ -1,0 +1,15 @@
+# A file written against an older format. Gate 1 stops here by default, and gate
+# 2 is deliberately not run on it — the engine has just said it does not speak
+# this file's format, so shape errors that followed would be as likely to be the
+# format gap as the author's mistake.
+#
+# With --ignore-version the mismatch becomes a warning, gate 2 runs, and this file
+# turns out to be fine. That is what makes it useful here: the remaining error
+# comes from global-params.yaml, which proves --ignore-version relaxed the version
+# gate and nothing else (FR-CFG-014).
+
+version: 1
+
+escrow:
+  steps:
+    - action: aqua.v1.escrow-factory

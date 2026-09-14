@@ -1,0 +1,10 @@
+# No `version` key. The engine has nothing to compare against, so it cannot
+# conclude a mismatch — always a warning recommending the key be added, and never
+# an error, `--ignore-version` or not.
+#
+# Everything else in this mount is valid, which makes it the case for "warnings
+# are printed but never fail validation": the run exits 0 with something to say.
+
+escrow:
+  steps:
+    - action: aqua.v1.escrow-factory

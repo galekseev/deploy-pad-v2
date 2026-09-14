@@ -85,6 +85,8 @@ In code the split is `contracts/run-context.ts` for the types and `phases/phase-
 
 Produced by [phase 2](../architecture/phase-2-load-validation.md) after four ordered gates: version check, schema, referential rules, value resolution. Fully resolved, per chain, every secret tagged.
 
+> **Landed so far:** gates 1 and 2, behind `loadConfigSet`. What they produce is not this artifact but its raw input — the parsed, shape-checked documents. The type below arrives with gate 4 in S3, which is also when there is anything resolved to put in it.
+
 | Field | Shape | Meaning and source |
 |---|---|---|
 | `workflow` | `{ kind: 'id', id: string } \| { kind: 'inline', action: string, method?, factory? }` | The plan's target; the inline variant is a single-action plan (FR-PLN-070). |

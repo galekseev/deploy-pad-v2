@@ -18,8 +18,12 @@ import { runCli } from '../../packages/engine/src/cli.ts';
 import { flagMatrix } from '../support/flag-matrix.ts';
 import { repoPath } from '../support/paths.ts';
 
-/** A real mount, so `list` has something to enumerate on its accepted cells. */
-const MOUNT = repoPath('test/fixtures/configs/list-basic');
+/**
+ * A complete, valid mount. Every accepted cell has to survive phase 2's gates
+ * now, not just phase 1's parser — so `-e` names a plan that is really there and
+ * `--multisig` an entry the registry really declares.
+ */
+const MOUNT = repoPath('test/fixtures/configs/valid');
 
 /** Commands whose invocation is incomplete without a plan, per the matrix. */
 const PLAN_REQUIRED = new Set(['run', 'validate', 'report']);
@@ -33,8 +37,8 @@ const PLAN_FLAGS = new Set(['-e', '--plan']);
  * the two agree.
  */
 const SAMPLE: Record<string, readonly string[]> = {
-  '-e': ['a-plan'],
-  '--plan': ['a-plan'],
+  '-e': ['escrow'],
+  '--plan': ['escrow'],
   '--preset': ['prod'],
   '--set': ['OWNER_ADDRESS=0x1'],
   '--overrides': ['overrides.yaml'],
@@ -106,7 +110,7 @@ function invoke(argv: readonly string[]): ExitCode {
 function argvFor(command: string, flag: string): readonly string[] {
   const argv = [command];
 
-  if (PLAN_REQUIRED.has(command) && !PLAN_FLAGS.has(flag)) argv.push('-e', 'a-plan');
+  if (PLAN_REQUIRED.has(command) && !PLAN_FLAGS.has(flag)) argv.push('-e', 'escrow');
   // The flag under test supplies the mount when it is the mount flag.
   if (flag !== '--configs-dir') argv.push('--configs-dir', MOUNT);
 
@@ -167,6 +171,6 @@ describe('the flags the matrix calls out as mistakes', () => {
   });
 
   it('[FR-CLI-006] refuses report --restart before anything is read', () => {
-    expect(invoke(['report', '-e', 'a-plan', '--restart'])).toBe(ExitCode.Configuration);
+    expect(invoke(['report', '-e', 'escrow', '--restart'])).toBe(ExitCode.Configuration);
   });
 });

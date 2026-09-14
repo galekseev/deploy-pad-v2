@@ -11,8 +11,8 @@ import { ExitCode } from '../../src/contracts/index.ts';
 import { repoPath } from '../../../../test/support/paths.ts';
 import { capture } from '../support/capture.ts';
 
-const MOUNT = repoPath('test/fixtures/configs/list-basic');
-const UNPARSEABLE = repoPath('test/fixtures/configs/list-unparseable');
+const MOUNT = repoPath('test/fixtures/configs/valid');
+const UNPARSEABLE = repoPath('test/fixtures/configs/unparseable');
 const ABSENT = repoPath('test/fixtures/configs/no-such-mount');
 
 function list(...flags: readonly string[]): { readonly exit: ExitCode; readonly out: string; readonly err: string } {
@@ -107,7 +107,7 @@ describe('list against a mount it cannot read', () => {
     const { exit, err } = against(UNPARSEABLE);
 
     expect(exit).toBe(ExitCode.Configuration);
-    expect(err).toContain('cannot read workflows.yaml');
+    expect(err).toContain('workflows.yaml is not readable as YAML');
   });
 
   it('[FR-CLI-032] fails rather than reporting an empty config set for an unmounted directory', () => {
@@ -117,12 +117,14 @@ describe('list against a mount it cannot read', () => {
     expect(err).toContain('no config set to list');
   });
 
-  it('[FR-CLI-032] reports the sections a partial mount does carry, and names the ones it does not', () => {
-    // The unparseable fixture has no actions.yaml and no plans/, so asking for
-    // those alone is a mount that carries nothing.
+  it('[FR-CLI-032] is not failed by a file the filters exclude', () => {
+    // The unparseable fixture's broken file is workflows.yaml, and it has no
+    // plans/ at all — so `--plans` never opens the broken file and fails for the
+    // honest reason instead.
     const { exit, err } = against(UNPARSEABLE, '--plans');
 
     expect(exit).toBe(ExitCode.Configuration);
     expect(err).toContain('no config set to list');
+    expect(err).not.toContain('workflows.yaml');
   });
 });
