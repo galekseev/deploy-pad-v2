@@ -93,6 +93,8 @@ NFR-060 is claimed here because this is the slice where the run context first ex
 
 **Scope.** Referential validation across files: action and workflow references, prior-step rules, cycles, chain names, pin selectability, multisig chain coverage. Chain resolution against the registry including chain sets. Preset selection and the fallback ladder. Deployment override merge. The ten-step value resolution in its fixed order, all six namespaces, per chain. Vault resolution with secret tagging at the load layer. The `strict` flag and its narrow non-strict tolerance.
 
+The environment arrives as an argument, not a lookup: `cross/env-file.ts` reads it once and the map is passed into the resolver, so the rules stay runnable off-node ([stack.md §4](stack.md#4-repository-layout)). The eslint ban that holds this landed with S1, before there was anything to fix.
+
 **Acceptance.** FR-CHN-001 through FR-CHN-034, FR-GLB-001 through FR-GLB-014, FR-REF-001 through FR-REF-032, FR-SEC-001 through FR-SEC-014, FR-PLN-001 through FR-PLN-052 and FR-WFL-005. NFR-003 gets its first executable test here, against the diagnostic output and the log sinks — the moment secrets first exist in memory is the moment the redaction test has to exist.
 
 **Not in scope.** Anything about steps: wiring, methods and salts are phase 3.

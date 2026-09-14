@@ -2,18 +2,24 @@ import js from '@eslint/js';
 import tseslint from 'typescript-eslint';
 
 /**
- * The console/stdout ban is the enforcement half of the redaction guarantee
- * (NFR-003): every line the engine emits leaves through the one function that
- * consults the secret registry, so a call site cannot opt out by reaching for
- * `console.log`. The `process.exit` ban is the enforcement half of "flush
- * before exit" — the CLI returns an ExitCode up the stack and lets the process
- * drain instead of truncating the tail of a log.
+ * Three guarantees, enforced rather than intended, because one that is only
+ * intended decays the moment someone is in a hurry.
  *
- * Both land in the first slice rather than after the first violation, because a
- * guarantee that is only intended decays the moment someone is in a hurry.
- * See implementation/stack.md §7.
+ * The console/stdout ban is the enforcement half of redaction (NFR-003): every
+ * line the engine emits leaves through the one function that consults the secret
+ * registry, so a call site cannot opt out by reaching for `console.log`. The
+ * `process.exit` ban is the enforcement half of "flush before exit" — the CLI
+ * returns an ExitCode up the stack and lets the process drain instead of
+ * truncating the tail of a log. Both landed with the scaffold (stack.md §7).
+ *
+ * The `process.env` ban is the enforcement half of the purity invariant
+ * (stack.md §4): the resolution rules take the environment as an argument rather
+ * than reaching for it, so they stay runnable outside node — which is what a
+ * browser-side consumer of the same rules needs, and what keeps a test from
+ * mutating a global to set one variable. It lands before the code it constrains,
+ * while there is nothing to fix.
  */
-const forbiddenProcessWrites = [
+const forbiddenProcessAccess = [
   {
     object: 'process',
     property: 'stdout',
@@ -28,6 +34,12 @@ const forbiddenProcessWrites = [
     object: 'process',
     property: 'exit',
     message: 'Return an ExitCode and let the process drain — see stack.md §7.',
+  },
+  {
+    object: 'process',
+    property: 'env',
+    message:
+      'Take the environment as an argument; only the CLI reads it — see stack.md §4.',
   },
 ];
 
@@ -46,7 +58,7 @@ export default tseslint.config(
     },
     rules: {
       'no-console': 'error',
-      'no-restricted-properties': ['error', ...forbiddenProcessWrites],
+      'no-restricted-properties': ['error', ...forbiddenProcessAccess],
       '@typescript-eslint/consistent-type-imports': 'error',
       '@typescript-eslint/explicit-module-boundary-types': 'error',
       '@typescript-eslint/switch-exhaustiveness-check': 'error',
@@ -58,6 +70,19 @@ export default tseslint.config(
     rules: {
       'no-console': 'off',
       'no-restricted-properties': 'off',
+    },
+  },
+  {
+    // The one engine module allowed to read the environment. It already owns the
+    // mount's `.env`, so it is where the map the resolvers are handed comes from
+    // (stack.md §4). Narrowed rather than switched off: this file still may not
+    // exit the process or write to a stream.
+    files: ['packages/engine/src/cross/env-file.ts'],
+    rules: {
+      'no-restricted-properties': [
+        'error',
+        ...forbiddenProcessAccess.filter((entry) => entry.property !== 'env'),
+      ],
     },
   },
   {
